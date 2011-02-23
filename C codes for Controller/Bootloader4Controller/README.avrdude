@@ -1,0 +1,5 @@
+
+in order to use avrdude try:
+
+avrdude -p atxmega128a1 -P /dev/ttyUSB0 -c avr109 -e -U flash:w:something.hex
+

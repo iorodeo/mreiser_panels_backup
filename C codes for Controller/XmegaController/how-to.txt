@@ -1,0 +1,25 @@
+How-to info on compiling and loading the panel controller firmware
+
+1) Install WinAVR: 
+    download http://sourceforge.net/projects/winavr/files/WinAVR/20090313/WinAVR-20090313-install.exe/download
+    install
+    make sure C:\WinAVR-20090313\bin and C:\WinAVR-200903013\utils\bin are added to the Path system variable
+  
+2) Compile the code:
+    open up a command console
+    cd to the directory where the panelcontroller code is located
+    type make
+  
+3) download the hex file
+    connect the panelcontroller box to the pc via USB cable
+    (this will trigger the download of the USB serial driver if not already loaded)
+    goto the Device Manager on the PC and identify the COM port used by the USB serial driver
+    edit the flash.bat file and change the avrdude port argument to the correct port (default is -P COM5)
+    turn on the panel controller hardware, the rightmost LED will turn on
+    within 3 seconds doubleclick the flash.bat icon, this should open up a command window and the hex file will be downloaded
+  
+4) connect to the panel controller using some terminal software (e.g. hyperterminal)
+    start up the terninal software
+    create a new connection, set the port to the USB serial port, configure to port to 115200 baud, 8 data bits, no parity, no flow control
+    power-up the controller - after the 3 sec bootloader delay the controller should send a wake-up message to the PC
+    the second LED from left will be on during the FS mounting then blick 4 times to indicate the controller is alive and running

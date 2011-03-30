@@ -1,6 +1,7 @@
 function PControllerUnitTesting
 
 clc;
+
 fprintf(1, 'Please run this testing script after you run PControl and keep PControl GUI on\n');
 menuString = sprintf('\nChoose a feature to test:\n\t[1] ADC/DAC testing\n\t[2] Pattern benchmark testing\n\t[3] Pattern Jitter testing\n\t[4] Dump frame testing\n\t[q] Quit\n\n\tSelection: ');
 
@@ -96,6 +97,7 @@ return;
 
 %-----------------------------------------------------
 function JitterTest
+
 try
     fprintf(1, '\n\n\t***************************************\n');
     fprintf(1,     '\t*     Dump frame test                 *\n');
@@ -201,6 +203,9 @@ return;
 %----------------------------------------------------------
 
 function DumpFrame
+
+global frame_num frame_length pattern counter
+
 try
     fprintf(1, '\n\n\t***************************************\n');
     fprintf(1,     '\t*     Dump frame testing              *\n');
@@ -229,13 +234,8 @@ t= timer;
 counter = 1;
 set(t,'ExecutionMode','fixedrate');
 frame_num = 0;
-set(t, 'timerFcn',['tstart = tic;',...
-                   'data = transpose(pattern.data(frame_num*frame_length+1:(frame_num + 1)*frame_length));',...
-                   'Panel_com(''dump_frame'', [frame_length, frame_num/pattern.x_num * 2047, 0, pattern.num_panels,  pattern.gs_val, pattern.row_compression, data]);',...I
-                   'frame_num = mod(frame_num + 1, pattern.x_num);',...
-                   'counter = counter + 1;',...
-                   'etime{counter}=toc(tstart);']);
 
+t.TimerFcn = @timefun;
 set(t,'tasksToExecute', 1000);
 
 i=50;
@@ -260,4 +260,13 @@ end
 
 return;
 
+function timefun(obj, event)
+    global frame_num frame_length pattern counter
+    tstart = tic;
+    data = transpose(pattern.data(frame_num*frame_length+1:(frame_num + 1)*frame_length));
+    Panel_com('dump_frame', [frame_length, frame_num/pattern.x_num * 2047, 0, pattern.num_panels,  pattern.gs_val, pattern.row_compression, data]);
+    frame_num = mod(frame_num + 1, pattern.x_num);
+    counter = counter + 1;
+    etime{counter}=toc(tstart);
+    
 

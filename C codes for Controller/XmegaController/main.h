@@ -22,6 +22,7 @@ void init_all(void);
 void handle_message_length_1(uint8_t *msg_buffer);
 void handle_message_length_2(uint8_t *msg_buffer);
 void handle_message_length_3(uint8_t *msg_buffer);
+void handle_message_length_4(uint8_t *msg_buffer);
 void handle_message_length_5(uint8_t *msg_buffer);
 void handle_message_length_12(uint8_t *msg_buffer);
 void handle_message_length_52(uint8_t *msg_buffer);

@@ -14,7 +14,7 @@
 #include <avr/eeprom.h>
 
 //globals - for now! - try to cut down on these
-uint8_t  Stop = 1;
+volatile uint8_t  Stop = 1;
 uint8_t  display_flag = 0;
 uint8_t  x_gt_y = 0;
 uint8_t  Laser_active = 0;
@@ -29,10 +29,10 @@ volatile uint16_t frame_num = 0;
 uint16_t frame_num_old = 999;  //just chosen at random
 int16_t  function_X[FUNCTION_LENGTH];
 int16_t  function_Y[FUNCTION_LENGTH];
-uint16_t function_counter_x = 0;
-uint16_t function_counter_y = 0;
-uint32_t func_global_counter_x = 0;
-uint32_t func_global_counter_y = 0;
+volatile uint16_t function_counter_x = 0;
+volatile uint16_t function_counter_y = 0;
+volatile uint32_t func_global_counter_x = 0;
+volatile uint32_t func_global_counter_y = 0;
 
 uint16_t functionX_rate = FUNCTION_RATE;
 uint16_t functionY_rate = FUNCTION_RATE;
@@ -63,7 +63,7 @@ uint16_t func_ID_Y = 0;
 uint16_t loadXBuffer = 2*FUNCTION_LENGTH;
 uint16_t loadYBuffer = 2*FUNCTION_LENGTH;
 
-static const uint8_t VERSION[] = "1.0\0";
+static const uint8_t VERSION[] = "1.1\0";
 static const uint8_t SDInfo[] = "SD.mat\0";
 
 
@@ -270,6 +270,9 @@ int main(void) {
                     case 3: // if length 3, then decode...address change or ...
                         handle_message_length_3(&msg_buffer[0]);
                         break;
+					case 4:
+						handle_message_length_4(&msg_buffer[0]);
+						break;
                     case 5: // if length 5, then decode, set x,y index, or set gain, bias
                         handle_message_length_5(&msg_buffer[0]);
                         break;
@@ -305,8 +308,7 @@ int main(void) {
                     case 50: //
                         display_dumped_frame(&msg_buffer[0]);
                         break;
-                    default:
-xprintf(PSTR("message_length = %u\n"), message_length);					
+                    default:			
                         i2cMasterSend(0x00, 8, ERROR_CODES[6]);
                 } //end of switch
             }// end of if, goes to top if nothing received on UART
@@ -327,14 +329,19 @@ void handle_message_length_1(uint8_t *msg_buffer) {
     switch(msg_buffer[0]) {
         case 0x20:  //Start display: 0x20
             //set these to zero so that start at beginning of function - useful for putting in a set amount of expansion
-            function_counter_x = 0;
-            function_counter_y = 0;
+			func_global_counter_x = funcSize_x;
+			func_global_counter_y = funcSize_y;
+			function_counter_x = 0;
+			function_counter_y = 0;
             Stop = 0;
             display_flag = 0;  //clear the display flag
             Reg_Handler(Update_display, UPDATE_RATE, 1, 1);
             Reg_Handler(increment_index_x, UPDATE_RATE, 2, 0); //initilize the 2 and 3 priority interupts to a fast rate so that
             Reg_Handler(increment_index_y, UPDATE_RATE, 3, 0); // the countdown is fast until the setting of the next rate
-            break;                        //by the Update_display interupt.
+                                                                //by the Update_display interupt.
+			Reg_Handler(update_funcCnt_x, functionX_rate, 4, 1);
+			Reg_Handler(update_funcCnt_y, functionY_rate, 5, 1); 
+			break;
             
         case 0x30: //stop display
             Stop = 1;
@@ -342,18 +349,24 @@ void handle_message_length_1(uint8_t *msg_buffer) {
             Reg_Handler(Update_display, UPDATE_RATE, 1, 0);
             Reg_Handler(increment_index_x, UPDATE_RATE, 2, 0);
             Reg_Handler(increment_index_y, UPDATE_RATE, 3, 0);
+			Reg_Handler(update_funcCnt_x, functionX_rate, 4, 0);
+			Reg_Handler(update_funcCnt_y, functionY_rate, 5, 0); 
             
             break;
             
         case 0x25:  //Start display & trigger - same as regular, but this also does trigger
             //set these to zero so that start at beginning of function - useful for putting in a set amount of expansion
-            function_counter_x = 0;
-            function_counter_y = 0;
+			func_global_counter_x = funcSize_x;
+			func_global_counter_y = funcSize_y;
+			function_counter_x = 0;
+			function_counter_y = 0;
             Stop = 0;
             display_flag = 0;  //clear the display flag
             Reg_Handler(Update_display, UPDATE_RATE, 1, 1);
             Reg_Handler(increment_index_x, UPDATE_RATE, 2, 0);
             Reg_Handler(increment_index_y, UPDATE_RATE, 3, 0);
+			Reg_Handler(update_funcCnt_x, functionX_rate, 4, 1);
+			Reg_Handler(update_funcCnt_y, functionY_rate, 5, 1); 
             Reg_Handler(toggle_trigger, (uint32_t)OVERFLOW_RATE/trigger_rate, 0, 1); //turn on the trigger toggle
             break;
             
@@ -363,6 +376,8 @@ void handle_message_length_1(uint8_t *msg_buffer) {
             Reg_Handler(Update_display, UPDATE_RATE, 1, 0);
             Reg_Handler(increment_index_x, UPDATE_RATE, 2, 0);
             Reg_Handler(increment_index_y, UPDATE_RATE, 3, 0);
+			Reg_Handler(update_funcCnt_x, functionX_rate, 4, 0);
+			Reg_Handler(update_funcCnt_y, functionY_rate, 5, 0); 
             Reg_Handler(toggle_trigger, OVERFLOW_RATE/trigger_rate, 0, 0); //turn off the trigger toggle
 			digitalWrite(3,LOW);    //set the output to low
             break;
@@ -450,6 +465,16 @@ void handle_message_length_1(uint8_t *msg_buffer) {
 		case 0x22:
 		    eeprom_write_byte(work_mode,0x00);
 			xprintf(PSTR("Reset controller to work in the PC dumping mode!\n"));
+			break;
+
+		case 0x23:  //reset function x  count
+			Reg_Handler(update_funcCnt_x, functionX_rate, 4, 0);
+			func_global_counter_x = funcSize_x;
+			break;
+
+		case 0x24:  //reset function y count
+			Reg_Handler(update_funcCnt_y, functionY_rate, 5, 0); 
+			func_global_counter_y = funcSize_y;
 			break;
             
         default: i2cMasterSend(0x00, 8, ERROR_CODES[1]);
@@ -567,7 +592,6 @@ void handle_message_length_3(uint8_t *msg_buffer) {
             functionX_rate = OVERFLOW_RATE/funcX_freq;
             if (quiet_mode_on == 0)
                 xprintf(PSTR("function X update frequency = %u.\n"), funcX_freq);
-            Update_Reg_Handler(update_funcCnt_x, functionX_rate, 4, 1);
             break;
             
         case 0x30: // this is a set function generator frequency
@@ -575,10 +599,22 @@ void handle_message_length_3(uint8_t *msg_buffer) {
             functionY_rate = OVERFLOW_RATE/funcY_freq;
             if (quiet_mode_on == 0)
                 xprintf(PSTR("function Y update frequency = %u.\n"), funcY_freq);
-            Update_Reg_Handler(update_funcCnt_y, functionY_rate, 5, 1);
             break;
             
         default: i2cMasterSend(0x00, 8, ERROR_CODES[3]);
+    }
+}
+
+void handle_message_length_4(uint8_t *msg_buffer) {
+    int16_t setVal;
+	
+    switch(msg_buffer[0]) {
+        case 0x10: //set a value ranging from 0-2047 to one of the ADC1~4. 
+		    setVal = (int16_t) msg_buffer[2] + (256*msg_buffer[3]);
+            analogWrite(msg_buffer[1] - 1, setVal);
+            break;
+        default:   
+			i2cMasterSend(0x00, 8, ERROR_CODES[4]);
     }
 }
 
@@ -604,11 +640,13 @@ void handle_message_length_5(uint8_t *msg_buffer) {
             bias_x = msg_buffer[2];
             gain_y = msg_buffer[3];
             bias_y = msg_buffer[4];
+			if (quiet_mode_on == 0)
+                xprintf(PSTR("set_gain_bias: gain_x= %d,  bias_x= %d, gain_y= %d, bias_y=%d\n"), gain_x, bias_x, gain_y, bias_y);
             break;
             
             
         default:
-            i2cMasterSend(0x00, 8, ERROR_CODES[4]);
+            i2cMasterSend(0x00, 8, ERROR_CODES[5]);
     }
 }
 
@@ -673,10 +711,6 @@ void display_dumped_frame (uint8_t *msg_buffer) {
 }
 
 
-
-
-
-
 void fetch_display_frame(uint16_t f_num){
     // this function will fetch the current frame from the SD-card and display it.
     // pass in f_num instead of using global frame_num to ensure that the value of
@@ -706,10 +740,10 @@ void fetch_display_frame(uint16_t f_num){
     if ((res == FR_OK) && (file1.fptr == offset)) {
         res = f_read(&file1, frameBuff, len, &cnt);
         if ((res == FR_OK) && (cnt == len)) {	
-		    if (func_ID_X != 0)
+		    if ((func_ID_X != 0) && (Stop == 0))  //ISR 4 and 5 are enalbed only after 'start'
 				Reg_Handler(update_funcCnt_x, functionX_rate, 4, 1);  //straigforward way to avoid fs reentrant
         
-			if (func_ID_Y != 0)
+			if ((func_ID_Y != 0) && (Stop == 0))  
 				Reg_Handler(update_funcCnt_y, functionY_rate, 5, 1); //straigforward way to avoid fs reentrant
         
 		
@@ -794,11 +828,11 @@ void fetch_display_frame(uint16_t f_num){
         }
     } else {
         //SREG = sreg;
-        if (func_ID_X != 0)
-            Reg_Handler(update_funcCnt_x, functionX_rate, 4, 1);	//straigforward way to avoid fs reentrant
+        //if ((func_ID_X != 0) && (Stop == 0)) 
+        //    Reg_Handler(update_funcCnt_x, functionX_rate, 4, 1);	//straigforward way to avoid fs reentrant
         
-        if (func_ID_Y != 0)
-            Reg_Handler(update_funcCnt_y, functionY_rate, 5, 1);   //straigforward way to avoid fs reentrant
+        //if ((func_ID_Y != 0) && (Stop == 0)) 
+        //    Reg_Handler(update_funcCnt_y, functionY_rate, 5, 1);   //straigforward way to avoid fs reentrant
         
         if (quiet_mode_on == 0){
             xputs(PSTR("Error in f_lseek in fetch_display_frame!\n"));
@@ -1061,7 +1095,7 @@ void set_pattern(uint8_t pat_num) {
         if (quiet_mode_on == 0)
             xputs(PSTR("pat_num is too big.\n"));
     
-    
+    //in case user forgets to 'stop' before set another pattern
 	Reg_Handler(update_funcCnt_x, functionX_rate, 4, 0); //straigforward way to avoid fs reentrant
     Reg_Handler(update_funcCnt_y, functionY_rate, 5, 0); //straigforward way to avoid fs reentrant
 	
@@ -1071,12 +1105,7 @@ void set_pattern(uint8_t pat_num) {
     if (res == FR_OK) {
         res = f_read(&file1, pattDataBuff, 512, &cnt); // read the 10 byte test header info block
         if ((res == FR_OK) && (cnt == 512)) {
-		    if (func_ID_X != 0)
-				Reg_Handler(update_funcCnt_x, functionX_rate, 4, 1);  //straigforward way to avoid fs reentrant
-        
-			if (func_ID_Y != 0)
-				Reg_Handler(update_funcCnt_y, functionY_rate, 5, 1); //straigforward way to avoid fs reentrant
-			
+
             // get the test header info
             ((uint8_t*)&x_num)[0] = pattDataBuff[0];
             ((uint8_t*)&x_num)[1] = pattDataBuff[1];
@@ -1226,7 +1255,7 @@ void set_default_func(uint8_t func_channel) {
             if (quiet_mode_on == 0)
                 xputs(PSTR("Setting default function for X.\n"));
             
-            Reg_Handler(update_funcCnt_x, functionX_rate, 4, 0);//disable ISR
+            //Reg_Handler(update_funcCnt_x, functionX_rate, 4, 0);//disable ISR
             func_ID_X = 0;
             funcSize_x = FUNCTION_LENGTH;
             for (funcCnt = 0; funcCnt < FUNCTION_LENGTH; funcCnt++)
@@ -1237,7 +1266,7 @@ void set_default_func(uint8_t func_channel) {
         case 2:
             if (quiet_mode_on == 0)
                 xputs(PSTR("Setting default function for Y.\n"));
-            Reg_Handler(update_funcCnt_y, functionY_rate, 5, 0);//disable ISR
+            //Reg_Handler(update_funcCnt_y, functionY_rate, 5, 0);//disable ISR
             func_ID_Y = 0;
             funcSize_y = FUNCTION_LENGTH;
             for (funcCnt = 0; funcCnt < FUNCTION_LENGTH; funcCnt++)
@@ -1275,7 +1304,7 @@ void set_pos_func(uint8_t func_channel, uint8_t func_id) {
     switch(func_channel) {
         case 1:    //channel x
             //read the header block and send back the function name
-            Reg_Handler(update_funcCnt_x, functionX_rate, 4, 0);//disable ISR
+            //Reg_Handler(update_funcCnt_x, functionX_rate, 4, 0);//disable ISR
             
             res = f_close(&file2);
             
@@ -1313,12 +1342,12 @@ void set_pos_func(uint8_t func_channel, uint8_t func_id) {
                     xputs(PSTR("Error f_open in set_pos_func X.\n"));
             }
             function_counter_x = 0;
-            func_global_counter_x = funcSize_x;
-            Reg_Handler(update_funcCnt_x, functionX_rate, 4, 1);//enable ISR
+            func_global_counter_x = 0;
+            //Reg_Handler(update_funcCnt_x, functionX_rate, 4, 1);//enable ISR
             break;
             
         case 2:
-            Reg_Handler(update_funcCnt_y, functionY_rate, 5, 0); //disable ISR
+            //Reg_Handler(update_funcCnt_y, functionY_rate, 5, 0); //disable ISR
             //read the header block and send back the function name
             res = f_close(&file3);
             
@@ -1356,8 +1385,8 @@ void set_pos_func(uint8_t func_channel, uint8_t func_id) {
                     xputs(PSTR("Error f_open in set_pos_func Y.\n"));
             }
             function_counter_y = 0;
-            func_global_counter_y = funcSize_y;
-            Reg_Handler(update_funcCnt_y, functionY_rate, 5, 1);//enable ISR
+            func_global_counter_y = 0;
+            //Reg_Handler(update_funcCnt_y, functionY_rate, 5, 1);//enable ISR
             break;
             
         default:
@@ -1391,7 +1420,7 @@ void set_vel_func(uint8_t func_channel, uint8_t func_id) {
     
     switch(func_channel) {
         case 1:    //channel x
-            Reg_Handler(update_funcCnt_x, functionX_rate, 4, 0); //disable ISR
+            //Reg_Handler(update_funcCnt_x, functionX_rate, 4, 0); //disable ISR
             //read the header block and send back the function name
             res = f_close(&file2);
             
@@ -1426,13 +1455,13 @@ void set_vel_func(uint8_t func_channel, uint8_t func_id) {
                     xputs(PSTR("Error f_open in set_vel_func X.\n"));
             }
             function_counter_x = 0;
-            func_global_counter_x = funcSize_x;
-            Reg_Handler(update_funcCnt_x, functionX_rate, 4, 1); //enable ISR
+            func_global_counter_x = 0;
+            //Reg_Handler(update_funcCnt_x, functionX_rate, 4, 1); //enable ISR
             break;
             
         case 2:
             
-            Reg_Handler(update_funcCnt_y, functionY_rate, 5, 0); //disable ISR
+            //Reg_Handler(update_funcCnt_y, functionY_rate, 5, 0); //disable ISR
             
             res = f_close(&file3);
             
@@ -1467,8 +1496,8 @@ void set_vel_func(uint8_t func_channel, uint8_t func_id) {
                     xputs(PSTR("Error f_open in set_vel_func Y.\n"));
             }
             function_counter_y = 0;
-            func_global_counter_y = funcSize_y;
-            Reg_Handler(update_funcCnt_y, functionY_rate, 5, 1); //enable ISR
+            func_global_counter_y = 0;
+            //Reg_Handler(update_funcCnt_y, functionY_rate, 5, 1); //enable ISR
             break;
             
         default:

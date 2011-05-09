@@ -121,10 +121,10 @@ switch lower(command)
     case 'pc_dumping_mode'
         send_serial(char([1 hex2dec('22')]));
         
-    case 'reset_funccnt_x'  %reset function x index to 0
+    case 'reset_funccnt_x'  %reset function x count
         send_serial(char([1 hex2dec('23')]));
         
-    case 'reset_funccnt_y'  %reset function y index to 0
+    case 'reset_funccnt_y'  %reset function y  count
         send_serial(char([1 hex2dec('24')]));
         
         % two byte commands:

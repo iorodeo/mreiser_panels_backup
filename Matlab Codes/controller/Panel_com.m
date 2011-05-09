@@ -121,6 +121,12 @@ switch lower(command)
     case 'pc_dumping_mode'
         send_serial(char([1 hex2dec('22')]));
         
+    case 'reset_funccnt_x'  %reset function x index to 0
+        send_serial(char([1 hex2dec('23')]));
+        
+    case 'reset_funccnt_y'  %reset function y index to 0
+        send_serial(char([1 hex2dec('24')]));
+        
         % two byte commands:
     case 'reset'
         if (~isequal(length(argument),1)||(~isnumeric(argument)))
@@ -200,7 +206,7 @@ switch lower(command)
         
     case 'set_mode'
         if ((~isequal(length(argument),2))||(~isnumeric(argument))||any(argument > 5)||any(argument(1) < 0))
-            error('Loop mode command requires 2 numerical argument, 0,1,2,3, or 4 for both X, and Y');
+            error('Loop mode command requires 2 numerical argument, 0,1,2,3,4, or 5 for both X, and Y');
         end
         send_serial( char([3  hex2dec('10') argument(1) argument(2)]));
         

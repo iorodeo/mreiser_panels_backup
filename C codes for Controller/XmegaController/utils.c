@@ -30,15 +30,21 @@ void init_all()
   PORTJ.DIR = 0xf0;       // LEDs are on bits 4 - 7
   PORTJ.OUT = 0xf0;       // All LEDs off
 
-/*
+
   PORTK.DIR = 0xf0;       // bit 4 - 7 are external signal direction control
   PORTK.OUT = 0xff;       // external signal direction set to input (0 = input)
-*/
-  // set digital I/O signals to outputs
-  digitalMode(0, OUTPUT);
+
+
+
+ // set digital I/O signals to outputs
+  digitalMode(0, OUTPUT);     //used to trigger laser
   digitalMode(1, OUTPUT);     //used as a sign for the start and end of fetch_display_frame function
-  digitalMode(2, OUTPUT);     //used to trigger laser
-  digitalMode(3, OUTPUT);     //used to trigger camera
+  digitalMode(2, OUTPUT);     //used to trigger camera
+  digitalMode(3, INPUT);      //Used to detect external trigger signal 
+  PORTK.PIN3CTRL = 0x01;      //INT3 senses rising edge
+  PORTK.INT0MASK = 0x00;      //disable Int3 as source for port interrupt 0x00, enable it with 0x08.
+  PORTK.INTCTRL = 0x02;       //Set Int3 INT0 Level medium   
+
   
   OSC.XOSCCTRL = 0x47;    // 0.4-16 MHz XTAL - 1K CLK Start Up
   OSC.PLLCTRL = 0xC4;     // XOSC is PLL Source - 4x Factor (32MHz)
@@ -57,15 +63,15 @@ void init_all()
   // Initialize ADC (SPI master on port C)
   SPIC.CTRL = 0x58;       // Enable Master Mode, Mode 2, clkper/4
 
-  // range register 1: 0-10v range on ch 0,1,2,3
+  // range register 1: -5V-+5v range on ch 0,1 0-10V on ch 2, 3
   PORTC.OUTCLR = PIN4_bm;
-  SPIC.DATA = 0xbf;
+  SPIC.DATA = 0xab;
   loop_until_bit_is_set(SPIC.STATUS, 7);
   SPIC.DATA = 0xe0;
   loop_until_bit_is_set(SPIC.STATUS, 7);
   PORTC.OUTSET = PIN4_bm;
 
-  // range register 2: 0-10V range on ch 4,5,6,7
+  // range register 2: 0-10v range on ch 4,5,6,7
   PORTC.OUTCLR = PIN4_bm;
   SPIC.DATA = 0xdf;
   loop_until_bit_is_set(SPIC.STATUS, 7);
@@ -81,11 +87,11 @@ void init_all()
   loop_until_bit_is_set(SPIC.STATUS, 7);
   PORTC.OUTSET = PIN4_bm;
 
-  // control register: ch 000, mode = 00, pm = 00, code = 1, ref = 1, seq = 00
+  // control register: ch 000, mode = 00, pm = 00, code = 0(twos complement), ref = 1, seq = 00
   PORTC.OUTCLR = PIN4_bm;
   SPIC.DATA = 0x80;
   loop_until_bit_is_set(SPIC.STATUS, 7);
-  SPIC.DATA = 0x30;
+  SPIC.DATA = 0x10;
   loop_until_bit_is_set(SPIC.STATUS, 7);
   PORTC.OUTSET = PIN4_bm;
 
@@ -103,14 +109,14 @@ void init_all()
   loop_until_bit_is_set(SPID.STATUS, 7);
   PORTD.OUTSET = PIN4_bm;
 
-  // DAC output range register (all ch +/-5V range)
+//DAC output range register (all ch +/-10V range)  
   PORTD.OUTCLR = PIN4_bm;
   SPID.DATA = 0x0c;
 //	SPID.DATA = 0x08; // only ch 0
   loop_until_bit_is_set(SPID.STATUS, 7);
   SPID.DATA = 0x00;
   loop_until_bit_is_set(SPID.STATUS, 7);
-  SPID.DATA = 0x03;
+   SPID.DATA = 0x04;
   loop_until_bit_is_set(SPID.STATUS, 7);
   PORTD.OUTSET = PIN4_bm;
 
@@ -234,6 +240,7 @@ int16_t analogRead( uint8_t ch ) {
   int16_t w1;
   if (!(ch & ~7)) {
     // control register: ch = <ch>, mode = 00, pm = 00, code = 0, ref = 1, seq = 00
+	//coding = 0,the output coding is twos complement
     PORTC.OUTCLR = PIN4_bm;        // SPI SS = L
     SPIC.DATA = 0x80 | ((ch & 0x7) << 2);
     loop_until_bit_is_set(SPIC.STATUS, 7);
@@ -250,30 +257,57 @@ int16_t analogRead( uint8_t ch ) {
     loop_until_bit_is_set(SPIC.STATUS, 7);
     ((uint8_t*)&w1)[0] = SPIC.DATA;
     PORTC.OUTSET = PIN4_bm;        // SPI SS = H
-	
-	//in this way, 0v ->0, 5V -> 2047, 10V->4095
-    if (w1 & 1 << 12) {
-      w1 = (w1 & 0x0fff) >> 1;
-    } 
-	else{
-	  w1 = (w1 | 0x1000) >> 1;
-	}
+
+	//ADC0-1 -5V-5V  //ADC2-7 0-10V
+	if (!(ch& ~1))	
+		//in this way, 0v ->0, -5V -> -2047, 5V->2047
+
+		//-5V-0V
+		if (w1 & 1 << 12) { 
+		//input value is -5V-0v, ADC code from 0x1000 to 0x1fff
+		  w1 = (w1 & 0x0fff)>>1;
+		  w1 = w1 | 0xf800;
+		  //output value now is from 0xf800 to 0xffff
+		} 
+		else{   //0-5V
+		//since output data : 3 channel id bits + sign bit + 12 conversion result
+		//input value is 0-5V, 12 ADC code from 0x0000 to 0x0fff
+		 //remove the 3 channel id bits
+		  w1 = (w1 & 0x0fff)>>1; 
+		  //output value is now 0x0000 to 0x07ff
+		}
+	else
+		//in this way, 0v ->0, 5V -> 2047, 10V->4095
+		if (w1 & 1 << 12) { 
+		//input value is less than 5V, ADC code from 0x1000 to 0x1fff
+		  w1 = (w1 & 0x0fff) >> 1;
+		  //output value now is from 0x0000 to 0x07ff
+		} 
+		else{   
+		//since output data : 3 channel id bits + sign bit + 12 conversion result
+		//input value is bigger than 5v, 12 ADC code from 0x0000 to 0x0fff
+		  w1 = (w1 | 0x1000) >> 1;
+		 //remove the 3 channel id bits
+		  w1 = w1 & 0x0fff; 
+		  //output value is now 0x0800 to 0x0fff
+		}
     return w1;
   }
-  else {
+  else
     return 0;
-  }
 }
 
 void analogWrite(uint8_t ch, int16_t value) {
-  if (!((ch & ~3) || ((value & ~2047) && (~value & ~2047)))) {
+//AD5754 16 bit DAC, it also works for AD5724 12 bit DAC
+//chanel number should from 0 to 3 and value ranges from -32767 to 32767
+  if (!((ch & ~3) || ((value > 32767) || (value < -32767)))) {
     /* DAC register*/
     PORTD.OUTCLR = PIN4_bm;        // SPI SS = L
     SPID.DATA = 0x00 | (ch & 0x7);
     loop_until_bit_is_set(SPID.STATUS, 7);
-    SPID.DATA = (uint8_t)((value & 0xff0) >> 4);
+	SPID.DATA = (uint8_t)((value & 0xff00) >> 8);
     loop_until_bit_is_set(SPID.STATUS, 7);
-    SPID.DATA = (uint8_t)((value & 0xf) << 4);
+	SPID.DATA = (uint8_t)(value & 0xff) ;
     loop_until_bit_is_set(SPID.STATUS, 7);
     PORTD.OUTSET = PIN4_bm;        // SPI SS = H
   }
@@ -297,7 +331,7 @@ void test_DIO(uint8_t ch)
 		_delay_ms(100);			
     analogWrite(1, ADC_val); // +/- 5v range, 1v = 408
     if (k % 2)
-    ledToggle(1);  //toggle LED, once per triangle wave pulse
+    ledToggle(1);  //toggle LED, once per square wave pulse
   }
 }
 

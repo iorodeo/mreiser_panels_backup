@@ -4,7 +4,7 @@
 //In the new system OVERFLOW_RATE = 32MHz/8(prescaler)/512(timerE)
 //JL03092010 increase OVERFLOW_RATE 4 times in order to get a higher resolution clock for the handlers
 //#define OVERFLOW_RATE 2000000/256
-
+#define BUFFER_LENGTH 200 //ringbuffer size in byte
 #define OVERFLOW_RATE 8000000/256
 #define UPDATE_RATE OVERFLOW_RATE/400
 #define FUNCTION_RATE OVERFLOW_RATE/50
@@ -24,7 +24,8 @@ void handle_message_length_2(uint8_t *msg_buffer);
 void handle_message_length_3(uint8_t *msg_buffer);
 void handle_message_length_4(uint8_t *msg_buffer);
 void handle_message_length_5(uint8_t *msg_buffer);
-void handle_message_length_12(uint8_t *msg_buffer);
+void handle_message_length_62(uint8_t *msg_buffer);
+void handle_message_length_63(uint8_t *msg_buffer);
 void handle_message_length_52(uint8_t *msg_buffer);
 
 
@@ -34,7 +35,7 @@ void increment_index_x(void);
 void increment_index_y(void);
 void decrement_index_x(void);
 void decrement_index_y(void);
-void fetch_display_frame(uint16_t f_num);
+void fetch_display_frame(uint16_t f_num, uint16_t, uint16_t);
 void update_ANOUT(void);
 void update_funcCnt_x(void);
 void update_funcCnt_y(void);
@@ -55,6 +56,8 @@ void set_default_func(uint8_t func_channel);
 void display_dumped_frame (uint8_t *msg_buffer);
 
 void dump_mat(void);
+void fetch_update_funcX(uint8_t fReset, uint8_t); 
+void fetch_update_funcY(uint8_t fReset, uint8_t);
 
 unsigned char work_mode[1] EEPROM = {0xff};
 unsigned char arena_config[129] EEPROM;

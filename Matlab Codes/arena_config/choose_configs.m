@@ -73,7 +73,7 @@ guidata(hObject, handles);
 function button_add_file_Callback(hObject, eventdata, handles)
 % --- Executes on button press in button_add_file.
 curPath = pwd;
-panel_control_paths;
+load('Pcontrol_paths.mat');
 cd(cfg_path);
 
 [FileName,PathName] = uigetfile('cfg*.mat','Select a configuration file');
@@ -95,11 +95,9 @@ cd(curPath);
 
 function button_add_folder_Callback(hObject, eventdata, handles)
 % --- Executes on button press in button_add_folder.
-curPath = pwd;
-panel_control_paths;
-cd(cfg_path);
 
-dir_path = uigetdir;
+load('Pcontrol_paths.mat');
+dir_path = uigetdir(cfg_path);
 if ~isequal(dir_path, 0)
     dir_struct = dir(fullfile(dir_path, 'cfg*.mat'));
     [sorted_names,sorted_index] = sortrows({dir_struct.name}');
@@ -117,7 +115,7 @@ if(length(handles.file) > 0)
     set(handles.button_remove_file, 'enable', 'On');
     set(handles.button_loadcfg, 'enable', 'On');
 end
-cd(curPath);
+
 
 % --- Executes on button press in button_remove_file.
 function button_remove_file_Callback(hObject, eventdata, handles)
@@ -146,7 +144,7 @@ function button_loadcfg_Callback(hObject, eventdata, handles)
 global SD
 
 curPath = pwd;
-panel_control_paths;
+load('Pcontrol_paths.mat');
 cd(cfg_path);
 handles.SD = make_config_image(handles.file);
 % step 1 - get the drive letter
@@ -156,7 +154,24 @@ if (SD_drive ~= -1)
         dos(['del ' SD_drive ':\*.cfg']);
     end
     
-    dos(['copy /Y ' temp_path '\*.cfg ' SD_drive ':\']);  
+    result1 = dos(['copy /Y ' temp_path '\*.cfg ' SD_drive ':\']);
+    
+    % In some card reader, sd_drive might be a removeable drive, but it is wrong one
+    % give user a chance to input the correct drive
+    if result1
+        SD_drive = userInputSDDrive;
+        
+        if length(dir([SD_drive, ':\*.cfg']))
+            dos(['del ' SD_drive ':\*.cfg']);
+        end
+        
+        result2 = dos(['copy /Y ' temp_path '\*.cfg ' SD_drive ':\']);
+        
+        if result2
+            disp('The SD_drive is a invalid drive!');
+            return;
+        end
+    end
      
     SD.arenaConfig = handles.SD;
     save([controller_path '\SD'], 'SD');

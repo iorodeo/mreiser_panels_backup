@@ -1,14 +1,14 @@
 %set patten id first
-Panel_com('set_pattern_id', 9);
+Panel_com('set_pattern_id', 1);
 
 %create analog input channel and logging mode, NI-USB6009
-ai = analoginput('nidaq', 'Dev2');
+ai = analoginput('nidaq', 'Dev6');
  
 %AI0 and AI4 are the postive and negative inputs of differential analog input channel 0
 chans = addchannel(ai, 0); 
 set(ai, 'SampleRate', 10000);
 set(ai,'LoggingMode','Disk&Memory');
-set(ai,'LogFileName','c:\temp\jitter1.daq');
+set(ai,'LogFileName','c:\temp\jitter10.daq');
 set(ai,'SamplesPerTrigger', inf);
 
 start(ai);

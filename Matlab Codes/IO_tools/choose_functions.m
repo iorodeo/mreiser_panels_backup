@@ -73,7 +73,7 @@ guidata(hObject, handles);
 
 function button_add_function_Callback(hObject, eventdata, handles)
 % --- Executes on button press in button_add_function.
-panel_control_paths;
+load('Pcontol_paths.mat');
 cd(function_path)
 [FileName,PathName] = uigetfile('*function*.mat','Select a FUNCTION file');
 % returns a 0 if cancel is pressed
@@ -93,7 +93,8 @@ end
 
 function button_add_folder_Callback(hObject, eventdata, handles)
 % --- Executes on button press in button_add_folder.
-dir_path = uigetdir;
+load('Pcontrol_paths.mat');
+dir_path = uigetdir(function_path);
 if ~isequal(dir_path, 0)
     dir_struct = dir(fullfile(dir_path, '*function*.mat'));
     [sorted_names,sorted_index] = sortrows({dir_struct.name}');
@@ -147,7 +148,7 @@ guidata(hObject, handles);  % Update handles structure
 % --- Executes on button press in button_burn.
 function button_burn_Callback(hObject, eventdata, handles)
 global SD
-panel_control_paths;
+load('Pcontrol_paths.mat');
 %cd(root_path); % go back to matlab root
 % step 1 - get the drive letter
 SD_drive = get_SD_drive;
@@ -162,9 +163,27 @@ if (SD_drive ~= -1)
         dos(['del ' SD_drive ':\*.fun']);
     end
     
-     dos(['copy /Y ' temp_path '\*.fun ' SD_drive ':\']);  
+     result1 = dos(['copy /Y "' temp_path '\*.fun" ' SD_drive ':\']);  % SS
      %['dd if=' temp_path '\SD.img of=\\.\' SD_drive ': bs=1k &']
     %dos(['dd if=' temp_path '\SD.img of=\\.\' SD_drive ': bs=1k &']);
+    
+        % In some card reader, sd_drive might be a removeable drive, but it is wrong one
+    % give user a chance to input the correct drive
+    if result1
+        SD_drive = userInputSDDrive;
+        
+        if length(dir([SD_drive, ':\*.fun']))
+            dos(['del ' SD_drive ':\*.fun']);
+        end
+        
+        result2 = dos(['copy /Y "' temp_path '\*.fun" ' SD_drive ':\']); % SS
+        
+        if result2
+            disp('The SD_drive is a invalid drive!');
+            return;
+        end
+    end
+    
     SD.function = handles.SD;
     save([controller_path '\SD'], 'SD');
     save([SD_drive ':\SD'], 'SD');

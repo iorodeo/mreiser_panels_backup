@@ -52,7 +52,7 @@ set(gcf,'DoubleBuffer','on');
 guidata(hObject, handles);
 
 global currentState;
-panel_control_paths;
+load('Pcontrol_paths.mat');
 pattFullName = fullfile(pattern_path, currentState.pattName);
 load(pattFullName);
     

@@ -1,17 +1,19 @@
 function out = vec2dec_fast(vec, gs)
 % VEC2DEC_FAST Convert binary vector to decimal number fast.
 %
-%    VEC2DEC_FAST(B, gs) interprets the vector B and returns the
+%    VEC2DEC(B) interprets the binary vector B and returns the
 %    equivalent decimal number.  The least significant bit is 
 %    represented by the first column.
 %
+%    Non-zero values will be mapped to 1, e.g. [1 2 3 0] maps
+%    to [1 1 1 0].
 % 
-%    Note: The vector cannot exceed 52 values.
+%    Note: The binary vector cannot exceed 52 values.
 %
 %    Example:
 %       vec2dec_fast([1 1 1 0 1],1) returns 23
 %
-%jinyang liu 
+
 
 
 % Error if vec is not defined.
@@ -28,8 +30,9 @@ if gs~= 1
     for j = 1:length(vec)
         %binvec(j,:) = dec2bin(vec(j),gs);
         d = vec(j);
-        [f,e]=log2(max(d));
-        binvec(j,:) = rem(floor(d*pow2(1-max(gs,e):0)),2);
+        n = round(double(gs));
+        [~,e]=log2(max(d));
+        binvec(j,:) = rem(floor(d*pow2(1-max(n,e):0)),2);
     end
     
     % Convert the binary string to a decimal number.

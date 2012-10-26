@@ -41,6 +41,7 @@ end
         %!mode com8:115200,n,8,1
         serialPort = serial(serialPortName);
         serialPort.BaudRate = 921600;
+        %serialPort.BaudRate = 115200;
         serialPort.DataBits=8;
         serialPort.Parity='none';
         serialPort.StopBits=1;

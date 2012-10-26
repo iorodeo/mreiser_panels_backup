@@ -73,7 +73,7 @@ guidata(hObject, handles);
 
 function button_add_file_Callback(hObject, eventdata, handles)
 % --- Executes on button press in button_add_file.
-panel_control_paths;
+load('Pcontrol_paths.mat');
 cd(pattern_path)
 [FileName,PathName] = uigetfile('Pattern*.mat','Select a PATTERN file');
 % returns a 0 if cancel is pressed
@@ -93,7 +93,8 @@ end
 
 function button_add_folder_Callback(hObject, eventdata, handles)
 % --- Executes on button press in button_add_folder.
-dir_path = uigetdir;
+load('Pcontrol_paths.mat');
+dir_path = uigetdir(pattern_path);
 if ~isequal(dir_path, 0)
     dir_struct = dir(fullfile(dir_path, 'Pattern*.mat'));
     [sorted_names,sorted_index] = sortrows({dir_struct.name}');
@@ -146,7 +147,7 @@ guidata(hObject, handles);  % Update handles structure
 % --- Executes on button press in button_burn.
 function button_burn_Callback(hObject, eventdata, handles)
 global SD;
-panel_control_paths;
+load('Pcontrol_paths.mat');
 % step 1 - get the drive letter
 SD_drive = get_SD_drive;
 if (SD_drive ~= -1)
@@ -160,13 +161,22 @@ if (SD_drive ~= -1)
         dos(['del ' SD_drive ':\*.pat']);
     end
 
-     results = dos(['copy /Y ' temp_path '\*.pat ' SD_drive ':\']);  
-     %['dd if=' temp_path '\SD.img of=\\.\' SD_drive ': bs=1k &']
-    %dos(['dd if=' temp_path '\SD.img of=\\.\' SD_drive ': bs=1k &']);
+     result1 = dos(['copy /Y "' temp_path '\*.pat" ' SD_drive ':\']);  %% SS
 
-    if results
-        errordlg('Failed to use the dos copy command.');
-        return;
+    % In some card reader, sd_drive might be a removeable drive, but it is wrong one
+    % give user a chance to input the correct drive
+    if result1
+        SD_drive = userInputSDDrive;
+        if length(dir([SD_drive, ':\*.pat']))
+            dos(['del ' SD_drive ':\*.pat']);
+        end
+        
+        result2 = dos(['copy /Y "' temp_path '\*.pat" ' SD_drive ':\']);  %% SS
+        
+        if result2
+            disp('The SD_drive is a invalid drive!');
+            return;
+        end
     end
     
     SD.pattern = handles.SD;

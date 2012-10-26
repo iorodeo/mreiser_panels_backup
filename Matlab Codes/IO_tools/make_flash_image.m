@@ -8,8 +8,9 @@ Header_block = zeros(1, block_size);
 SD.num_patterns = num_patterns;
 
 %clean the temp folder
-panel_control_paths;
-dos(['del /Q ' temp_path '\*.pat']); 
+load('Pcontrol_paths.mat');
+%dos(['del /Q ' temp_path '\*.pat']); % SS
+dos(['del /Q "' temp_path '\*.pat"']); % SS
 
 for j = 1:num_patterns
     load([file_list(j).PathName '\' file_list(j).FileName]);

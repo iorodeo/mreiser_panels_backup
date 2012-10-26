@@ -30,7 +30,7 @@ pattern.Panel_map = [12 8 4 11 7 3 10 6 2  9 5 1; 24 20 16 23 19 15 22 18 14 21 
 % %     3     7    11    15    19    23    27    31    35    39    43    47
 % %     2     6    10    14    18    22    26    30    34    38    42    46
 % %     1     5     9    13    17    21    25    29    33    37    41    45
-directory_name = 'C:\Documents and Settings\liuj\My Documents\MATLAB\Xmega_Panel_controller\Patterns';
+directory_name = 'C:\temp';
 pattern.BitMapIndex = process_panel_map(pattern);
 pattern.data = make_pattern_vector(pattern);
 

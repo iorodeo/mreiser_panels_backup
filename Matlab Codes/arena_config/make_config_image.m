@@ -6,7 +6,7 @@ num_configs = length(file_list);
 SD.num_configs = num_configs;
 
 %clean the temp folder
-panel_control_paths;
+load('Pcontrol_paths.mat');
 dos(['del /Q ' temp_path '\*.cfg']); 
 
 for j = 1:num_configs

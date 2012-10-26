@@ -55,14 +55,15 @@ global SD currentState;
 
 
 handles.output = hObject;
+
 patternList = SD.pattern.pattNames;
 set(handles.setAPattern, 'String', patternList);
 set(handles.setAPattern, 'Value', currentState.pattID);
 currentState.pattName = SD.pattern.pattNames{1};
-currentState.chosePat = 0; % a flag to judge whether user chooses a pattern 
+currentState.chosePat = 0; % a flag to judge whether user chooses a pattern
 currentState.closeSetPat = 0; % a flag to check whether user closes the GUI
-guidata(hObject, handles);
 
+guidata(hObject, handles);
 
 % UIWAIT makes setAPattern wait for user response (see UIRESUME)
 % uiwait(handles.figure1);
@@ -76,6 +77,7 @@ function varargout = setPattern_OutputFcn(hObject, eventdata, handles)
 % handles    structure with handles and user data (see GUIDATA)
 % Get default command line output from handles structure
 varargout{1} = handles.output;
+
 
 % --- Executes on selection change in setAPattern.
 function setAPattern_Callback(hObject, eventdata, handles)
@@ -116,12 +118,15 @@ function loadPattern_Callback(hObject, eventdata, handles)
 % hObject    handle to loadPattern (see GCBO)
 % eventdata  reserved - to be defined in a future version of MATLAB
 % handles    structure with handles and user data (see GUIDATA)
-global currentState;
-currentState.chosePat =1;
-currentState.closeSetPat = 1;
-pattID = currentState.pattID;
-Panel_com('set_pattern_id', [pattID]); 
-close(gcf);
+global currentState SD;
+if SD.pattern.num_patterns ~=0
+    currentState.chosePat =1;
+    currentState.closeSetPat = 1;
+    pattID = currentState.pattID;
+    Panel_com('set_pattern_id', [pattID]);
+    close(gcf);
+end
+    
 
 % --- Executes on button press in showPatt.
 function showPatt_Callback(hObject, eventdata, handles)
@@ -129,7 +134,7 @@ function showPatt_Callback(hObject, eventdata, handles)
 % eventdata  reserved - to be defined in a future version of MATLAB
 % handles    structure with handles and user data (see GUIDATA)
 global currentState;
-panel_control_paths;
+load('Pcontrol_paths.mat');
 pattFullName = fullfile(pattern_path, currentState.pattName);
 if exist(pattFullName)
     play_current_pattern;

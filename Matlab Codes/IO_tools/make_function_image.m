@@ -8,8 +8,9 @@ Header_block = zeros(1, block_size);
 SD.numfunc = num_functions;
 
 %clean the temp folder
-panel_control_paths;
-dos(['del /Q ' temp_path '\*.fun']); 
+load('Pcontrol_paths.mat');
+%dos(['del /Q ' temp_path '\*.fun']); %SS
+dos(['del /Q "' temp_path '\*.fun"']); %SS
 pos_func_counter = 0;
 vel_func_counter = 0;
 

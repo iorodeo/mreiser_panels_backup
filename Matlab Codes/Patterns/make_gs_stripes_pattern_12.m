@@ -20,6 +20,6 @@ pattern.Panel_map = [12 8 4 11 7 3 10 6 2 9 5 1];
 pattern.BitMapIndex = process_panel_map(pattern);
 pattern.data = make_pattern_vector(pattern);
 
-directory_name = 'C:\Documents and Settings\liuj\My Documents\MATLAB\Xmega_Panel_controller\Patterns';
+directory_name = 'C:\temp';
 str = [directory_name '\Pattern_gs_stripes_12Pan']
 save(str, 'pattern');

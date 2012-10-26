@@ -163,7 +163,7 @@ display_curr_frame(handles)
 
 % --------------------------------------------------------------------
 function menu_load_pattern_Callback(hObject, eventdata, handles)
-panel_control_paths;
+load('Pcontrol_paths.mat');
 cd(pattern_path)
 [FileName,PathName] = uigetfile('P*.mat','Select a Pattern File');
 if (all(FileName ~= 0))

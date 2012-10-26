@@ -36,7 +36,7 @@ pattern.Pats = Pats;
 pattern.Panel_map = [12 8 4 11 7 3 10 6 2  9 5 1; 24 20 16 23 19 15 22 18 14 21 17 13; 36 32 28 35 31 27 34 30 26 33 29 25; 48 44 40 47 43 39 46 42 38 45 41 37];
 pattern.BitMapIndex = process_panel_map(pattern);
 pattern.data = make_pattern_vector(pattern);
-directory_name = 'C:\Documents and Settings\liuj\My Documents\MATLAB\Xmega_Panel_controller\Patterns';
+directory_name = 'C:\temp';
 %directory_name = 'c:\matlabroot\Panels\Patterns';
 str = [directory_name '\Pattern_4x4_blocks_48']
 save(str, 'pattern');

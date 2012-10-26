@@ -28,6 +28,10 @@ handles.output = hObject;
 handles.Running = 0;
 hPcontrol = gcf;
 % run the init program -
+if ~exist('PControl_paths.mat', 'file')
+    initialize_Pcontrol_paths;
+end
+
 handles.PC = PControl_init;
 
 movegui(gcf, 'center');
@@ -60,6 +64,8 @@ currentState.velFuncY = 1;
 currentState.posFuncX = 1;
 currentState.posFuncY = 1;
 currentState.pattID = 1;
+currentState.closeSetPosFun = 0;
+currentState.closeSetFun = 0;
 
 currentState.cfgID = 1;
 
@@ -588,7 +594,7 @@ Panel_com('led_tog');
 function menu_set_Pat_ID_Callback(hObject, eventdata, handles)
 global currentState newString SD;
 
-if isfield(SD, 'pattern')
+if SD.pattern.num_patterns ~=0
     setPattern;
     
     %wait till user chooses a pattern or closes the setPattern GUI
@@ -624,14 +630,14 @@ if isfield(SD, 'pattern')
     end
     
 else
-    warndlg('There is no pattern loaded on the SD card yet. You should load them before set a pattern!');
+    warndlg('You have no patterns to be set, please load patterns to SD card first.', 'Empty pattern list'); 
 end
 
 % --------------------------------------------------------------------
 function menu_test_adc_Callback(hObject, eventdata, handles)
 % open up a dialog box to get the channel number
 
-prompt = {'Please connect DAC1 to an ADC channel to be tested and connect DAC2 to a scope. You should see a 0 - 4 Volt triangle wave for about 20 seconds. Enter the ADC channel to be tested, from 1 to 8'};
+prompt = {'Please connect DAC0 to an ADC channel to be tested and connect DAC1 to a scope. You should see a 0 - 4 Volt triangle wave for about 20 seconds. Enter the ADC channel to be tested, from 1 to 8'};
 dlg_title = 'test ADC';
 num_lines= 1; def = {'1'};
 answer  = inputdlg(prompt,dlg_title,num_lines,def);
@@ -653,9 +659,9 @@ end
 function menu_test_DIO_Callback(hObject, eventdata, handles)
 % open up a dialog box to get the channel number
 
-helpdlg('Please connect any of INT1-4 to ADC1 channel and connect DAC2 to a scope. You should see a square wave for about 20 seconds.','DIO help');
+helpdlg('Please connect any of INT0-1 to ADC0 channel and connect DAC1 to a scope. You should see a square wave for about 20 seconds.','DIO help');
 
-Panel_com('dio_test', [0]);  %the argument 0 means using ADC1 for the input of the INT1-4
+Panel_com('dio_test', [0]);  %the argument 0 means using ADC0 for the input of the INT1-4
 
 
 % --------------------------------------------------------------------
@@ -891,3 +897,19 @@ function menu_PC_mode_Callback(hObject, eventdata, handles)
 % handles    structure with handles and user data (see GUIDATA)
 Panel_com('pc_dumping_mode');
 
+
+
+% --------------------------------------------------------------------
+function set_Pcontrol_paths_Callback(hObject, eventdata, handles)
+% hObject    handle to set_Pcontrol_paths (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
+change_paths;
+
+
+% --- Executes on button press in Update.
+function Update_Callback(hObject, eventdata, handles)
+% hObject    handle to Update (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
+Panel_com('update_gui_info');

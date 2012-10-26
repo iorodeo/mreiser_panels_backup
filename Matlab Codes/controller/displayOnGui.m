@@ -1,5 +1,6 @@
 function displayOnGui(obj,event)
 
+global hPcontrol
 % Define error message.
 error1 = 'Type ''help instrument\instrcallback'' for an example using INSTRCALLBACK.';
 error1Id = 'MATLAB:instrument:instrcallback:invalidSyntax';
@@ -32,10 +33,16 @@ EventDataTime = EventData.AbsTime;
 % fprintf([EventType ' event occurred at ' datestr(EventDataTime,13),...
 % 	' for the object: ' name '.\n']);
 
+if ~isempty(hPcontrol)
+    handles = guihandles(hPcontrol);
+end
+
 % Display the error string.
 if strcmpi(EventType, 'error')
 	newString = fprintf([EventData.Message '\n']);
 end
+
+
 
 if strcmpi(EventType, 'BytesAvailable')
         byteLen = obj.BytesAvailable;
@@ -56,21 +63,29 @@ if strcmpi(EventType, 'BytesAvailable')
                         indexJ = indexJ+1;
                     end
                 end
-                panel_control_paths;
+                %We used two commands in order to synchronize sd card information in 2011b. 
+                %one command is 'sync_sd_info' and the other is 'get_version'
+                %The reply of 'get_version' can trigger the byteavailable
+                %event
+                matFile = matFile(1:end-31); %Remove the answer from the current version query 
+                load('Pcontrol_paths.mat');
                 SDfile = fullfile(controller_path, 'SD.mat');
                 sdFid = fopen(SDfile, 'w');
                 fwrite(sdFid, matFile);
                 fclose(sdFid);
-                newString = 'The SD.matis tranferred to PC. Please restart PControl.';
+                newString = 'The SD.mat is tranferred to PC. Please restart PControl.';
             else %the data are not SD.mat
                 newString = char(out)';
             end
             
-        elseif byteLen > 0  % 0 < byteLen < 1000
+        elseif byteLen > 0  % 0 < byteLen < 250
              messRevd = fscanf(obj);
              newString = strtrim(messRevd);  %found a hardware reset
              if strcmp(newString, 'Main Controller Works')
                  initialized_PControl_display();
+             end
+             if strncmp(newString, 'update:', 7);
+                update_display_xy(newString);
              end
         else  %byteLen = 0
             return;

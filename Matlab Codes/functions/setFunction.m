@@ -22,7 +22,7 @@ function varargout = setFunction(varargin)
 
 % Edit the above text to modify the response to help setFunction
 
-% Last Modified by GUIDE v2.5 17-Dec-2009 11:37:05
+% Last Modified by GUIDE v2.5 21-Apr-2011 08:30:51
 % Begin initialization code - DO NOT EDIT
 gui_Singleton = 1;
 gui_State = struct('gui_Name',       mfilename, ...
@@ -233,7 +233,7 @@ currentState.setFun = 1;
 close(gcf);
 
 function display_function(functionName)
-panel_control_paths; % run to get path for functions.
+load('Pcontrol_paths.mat');
 funcFile = fullfile(function_path,functionName);
 if ~exist(funcFile)
     [filename, pathname] = uigetfile('function*.mat', 'Pick an velocity function file');
@@ -276,5 +276,3 @@ function figure1_CloseRequestFcn(hObject, eventdata, handles)
 global currentState;
 currentState.closeSetFun = 1;
 delete(hObject);
-
-

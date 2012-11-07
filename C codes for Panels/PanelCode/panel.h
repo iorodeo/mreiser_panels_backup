@@ -40,9 +40,11 @@ void DisplayChar(unsigned char c,unsigned char col);
 void StorePattern(unsigned char patternNumber, unsigned char *pattern);
 void LoadPattern_1byte(unsigned char pattern);
 void LoadPattern_3byte(unsigned char *pattern);
+void LoadPattern_4byte(unsigned char *pattern);
 void LoadPattern(unsigned char* pattern_byte);
 void LoadPattern16(unsigned char *pattern);
 void LoadPattern24(unsigned char *pattern);
+void LoadPattern32(unsigned char *pattern);
 void LoadPatternEEP(unsigned char *pattern);
 void delay(unsigned short us);
 void long_delay(unsigned short ms); 
@@ -109,6 +111,6 @@ static unsigned char EEPATTERNS[12][8] EEPROM = {{0xFF, 0xFF, 0x00, 0x00, 0xFF, 
 */
 
 
-static unsigned char GS[3][8] = { { 0x00, 0x00, 0x00, 0x00, 0xFF, 0xFF, 0xFF, 0xFF},
-				  { 0x00, 0x00, 0xFF, 0xFF, 0x00, 0x00, 0xFF, 0xFF},
-				  { 0x00, 0xFF, 0x00, 0xFF, 0x00, 0xFF, 0x00, 0xFF} };
+//static unsigned char GS[3][8] = { { 0x00, 0x00, 0x00, 0x00, 0xFF, 0xFF, 0xFF, 0xFF},
+//				  { 0x00, 0x00, 0xFF, 0xFF, 0x00, 0x00, 0xFF, 0xFF},
+//				  { 0x00, 0xFF, 0x00, 0xFF, 0x00, 0xFF, 0x00, 0xFF} };

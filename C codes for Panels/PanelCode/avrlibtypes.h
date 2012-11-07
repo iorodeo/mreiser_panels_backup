@@ -25,7 +25,7 @@
 #ifndef WIN32
 	// true/false defines
 	#define FALSE	0
-	#define TRUE	-1
+	#define TRUE	(!FALSE)
 #endif
 
 // datatype definitions macros

@@ -1,0 +1,527 @@
+Archive member included because of file (symbol)
+
+c:/winavr-20090313/bin/../lib/gcc/avr/4.3.2/avrxmega7\libgcc.a(_exit.o)
+                              c:/winavr-20090313/bin/../lib/gcc/avr/4.3.2/../../../../avr/lib/avrxmega7/crtx128a1.o (exit)
+
+Memory Configuration
+
+Name             Origin             Length             Attributes
+text             0x00000000         0x00100000         xr
+data             0x00802000         0x0000ffa0         rw !x
+eeprom           0x00810000         0x00010000         rw !x
+fuse             0x00820000         0x00000400         rw !x
+lock             0x00830000         0x00000400         rw !x
+signature        0x00840000         0x00000400         rw !x
+*default*        0x00000000         0xffffffff
+
+Linker script and memory map
+
+LOAD c:/winavr-20090313/bin/../lib/gcc/avr/4.3.2/../../../../avr/lib/avrxmega7/crtx128a1.o
+Address of section .text set to 0x20000
+LOAD eeprom_driver.o
+LOAD main.o
+LOAD serial.o
+LOAD sp_driver.o
+LOAD c:/winavr-20090313/bin/../lib/gcc/avr/4.3.2/avrxmega7\libgcc.a
+LOAD c:/winavr-20090313/bin/../lib/gcc/avr/4.3.2/../../../../avr/lib/avrxmega7\libc.a
+LOAD c:/winavr-20090313/bin/../lib/gcc/avr/4.3.2/avrxmega7\libgcc.a
+
+.hash
+ *(.hash)
+
+.dynsym
+ *(.dynsym)
+
+.dynstr
+ *(.dynstr)
+
+.gnu.version
+ *(.gnu.version)
+
+.gnu.version_d
+ *(.gnu.version_d)
+
+.gnu.version_r
+ *(.gnu.version_r)
+
+.rel.init
+ *(.rel.init)
+
+.rela.init
+ *(.rela.init)
+
+.rel.text
+ *(.rel.text)
+ *(.rel.text.*)
+ *(.rel.gnu.linkonce.t*)
+
+.rela.text
+ *(.rela.text)
+ *(.rela.text.*)
+ *(.rela.gnu.linkonce.t*)
+
+.rel.fini
+ *(.rel.fini)
+
+.rela.fini
+ *(.rela.fini)
+
+.rel.rodata
+ *(.rel.rodata)
+ *(.rel.rodata.*)
+ *(.rel.gnu.linkonce.r*)
+
+.rela.rodata
+ *(.rela.rodata)
+ *(.rela.rodata.*)
+ *(.rela.gnu.linkonce.r*)
+
+.rel.data
+ *(.rel.data)
+ *(.rel.data.*)
+ *(.rel.gnu.linkonce.d*)
+
+.rela.data
+ *(.rela.data)
+ *(.rela.data.*)
+ *(.rela.gnu.linkonce.d*)
+
+.rel.ctors
+ *(.rel.ctors)
+
+.rela.ctors
+ *(.rela.ctors)
+
+.rel.dtors
+ *(.rel.dtors)
+
+.rela.dtors
+ *(.rela.dtors)
+
+.rel.got
+ *(.rel.got)
+
+.rela.got
+ *(.rela.got)
+
+.rel.bss
+ *(.rel.bss)
+
+.rela.bss
+ *(.rela.bss)
+
+.rel.plt
+ *(.rel.plt)
+
+.rela.plt
+ *(.rela.plt)
+
+.text           0x00020000      0xc5e
+ *(.vectors)
+ .vectors       0x00020000      0x1f4 c:/winavr-20090313/bin/../lib/gcc/avr/4.3.2/../../../../avr/lib/avrxmega7/crtx128a1.o
+                0x00020000                __vectors
+                0x00020000                __vector_default
+ *(.vectors)
+ *(.progmem.gcc*)
+ *(.progmem*)
+                0x000201f4                . = ALIGN (0x2)
+                0x000201f4                __trampolines_start = .
+ *(.trampolines)
+ .trampolines   0x000201f4        0x0 linker stubs
+ *(.trampolines*)
+                0x000201f4                __trampolines_end = .
+ *(.jumptables)
+ *(.jumptables*)
+ *(.lowtext)
+ *(.lowtext*)
+                0x000201f4                __ctors_start = .
+ *(.ctors)
+                0x000201f4                __ctors_end = .
+                0x000201f4                __dtors_start = .
+ *(.dtors)
+                0x000201f4                __dtors_end = .
+ SORT(*)(.ctors)
+ SORT(*)(.dtors)
+ *(.init0)
+ .init0         0x000201f4        0x0 c:/winavr-20090313/bin/../lib/gcc/avr/4.3.2/../../../../avr/lib/avrxmega7/crtx128a1.o
+                0x000201f4                __init
+ *(.init0)
+ *(.init1)
+ *(.init1)
+ *(.init2)
+ .init2         0x000201f4       0x18 c:/winavr-20090313/bin/../lib/gcc/avr/4.3.2/../../../../avr/lib/avrxmega7/crtx128a1.o
+ *(.init2)
+ *(.init3)
+ *(.init3)
+ *(.init4)
+ .init4         0x0002020c       0x1c c:/winavr-20090313/bin/../lib/gcc/avr/4.3.2/../../../../avr/lib/avrxmega7/crtx128a1.o
+                0x0002020c                __do_copy_data
+ *(.init4)
+ *(.init5)
+ *(.init5)
+ *(.init6)
+ *(.init6)
+ *(.init7)
+ *(.init7)
+ *(.init8)
+ *(.init8)
+ *(.init9)
+ .init9         0x00020228        0x8 c:/winavr-20090313/bin/../lib/gcc/avr/4.3.2/../../../../avr/lib/avrxmega7/crtx128a1.o
+ *(.init9)
+ *(.text)
+ .text          0x00020230        0x4 c:/winavr-20090313/bin/../lib/gcc/avr/4.3.2/../../../../avr/lib/avrxmega7/crtx128a1.o
+                0x00020230                __vector_38
+                0x00020230                __vector_104
+                0x00020230                __vector_22
+                0x00020230                __vector_63
+                0x00020230                __vector_28
+                0x00020230                __vector_67
+                0x00020230                __vector_1
+                0x00020230                __vector_119
+                0x00020230                __vector_32
+                0x00020230                __vector_75
+                0x00020230                __vector_71
+                0x00020230                __vector_91
+                0x00020230                __vector_34
+                0x00020230                __vector_62
+                0x00020230                __vector_77
+                0x00020230                __vector_102
+                0x00020230                __vector_24
+                0x00020230                __vector_12
+                0x00020230                __vector_55
+                0x00020230                __vector_69
+                0x00020230                __vector_81
+                0x00020230                __vector_90
+                0x00020230                __vector_46
+                0x00020230                __bad_interrupt
+                0x00020230                __vector_122
+                0x00020230                __vector_72
+                0x00020230                __vector_114
+                0x00020230                __vector_6
+                0x00020230                __vector_110
+                0x00020230                __vector_31
+                0x00020230                __vector_92
+                0x00020230                __vector_35
+                0x00020230                __vector_78
+                0x00020230                __vector_74
+                0x00020230                __vector_117
+                0x00020230                __vector_39
+                0x00020230                __vector_107
+                0x00020230                __vector_3
+                0x00020230                __vector_105
+                0x00020230                __vector_98
+                0x00020230                __vector_23
+                0x00020230                __vector_68
+                0x00020230                __vector_30
+                0x00020230                __vector_73
+                0x00020230                __vector_45
+                0x00020230                __vector_25
+                0x00020230                __vector_93
+                0x00020230                __vector_61
+                0x00020230                __vector_11
+                0x00020230                __vector_54
+                0x00020230                __vector_99
+                0x00020230                __vector_13
+                0x00020230                __vector_17
+                0x00020230                __vector_19
+                0x00020230                __vector_56
+                0x00020230                __vector_7
+                0x00020230                __vector_49
+                0x00020230                __vector_123
+                0x00020230                __vector_41
+                0x00020230                __vector_86
+                0x00020230                __vector_100
+                0x00020230                __vector_101
+                0x00020230                __vector_64
+                0x00020230                __vector_88
+                0x00020230                __vector_109
+                0x00020230                __vector_43
+                0x00020230                __vector_27
+                0x00020230                __vector_5
+                0x00020230                __vector_113
+                0x00020230                __vector_33
+                0x00020230                __vector_76
+                0x00020230                __vector_115
+                0x00020230                __vector_47
+                0x00020230                __vector_52
+                0x00020230                __vector_37
+                0x00020230                __vector_95
+                0x00020230                __vector_103
+                0x00020230                __vector_96
+                0x00020230                __vector_89
+                0x00020230                __vector_108
+                0x00020230                __vector_4
+                0x00020230                __vector_44
+                0x00020230                __vector_82
+                0x00020230                __vector_106
+                0x00020230                __vector_118
+                0x00020230                __vector_51
+                0x00020230                __vector_9
+                0x00020230                __vector_2
+                0x00020230                __vector_21
+                0x00020230                __vector_15
+                0x00020230                __vector_66
+                0x00020230                __vector_36
+                0x00020230                __vector_79
+                0x00020230                __vector_58
+                0x00020230                __vector_70
+                0x00020230                __vector_83
+                0x00020230                __vector_29
+                0x00020230                __vector_60
+                0x00020230                __vector_121
+                0x00020230                __vector_40
+                0x00020230                __vector_85
+                0x00020230                __vector_94
+                0x00020230                __vector_8
+                0x00020230                __vector_26
+                0x00020230                __vector_48
+                0x00020230                __vector_124
+                0x00020230                __vector_116
+                0x00020230                __vector_112
+                0x00020230                __vector_111
+                0x00020230                __vector_80
+                0x00020230                __vector_14
+                0x00020230                __vector_84
+                0x00020230                __vector_57
+                0x00020230                __vector_53
+                0x00020230                __vector_10
+                0x00020230                __vector_50
+                0x00020230                __vector_16
+                0x00020230                __vector_59
+                0x00020230                __vector_18
+                0x00020230                __vector_97
+                0x00020230                __vector_20
+                0x00020230                __vector_42
+                0x00020230                __vector_87
+                0x00020230                __vector_65
+                0x00020230                __vector_120
+ .text          0x00020234      0x274 eeprom_driver.o
+                0x000202bc                EEPROM_ReadByte
+                0x00020316                EEPROM_WaitForNVM
+                0x00020356                EEPROM_LoadByte
+                0x00020430                EEPROM_SplitWritePage
+                0x0002039c                EEPROM_AtomicWritePage
+                0x00020374                EEPROM_LoadPage
+                0x0002047a                EEPROM_EraseAll
+                0x00020320                EEPROM_FlushBuffer
+                0x000203e6                EEPROM_ErasePage
+                0x00020234                EEPROM_WriteByte
+ .text          0x000204a8      0x644 main.o
+                0x000204a8                CCPWrite
+                0x000205b0                BlockLoad
+                0x00020710                main
+                0x000204d2                BlockRead
+ .text          0x00020aec       0x44 serial.o
+                0x00020aec                initbootuart
+                0x00020b22                recchar
+                0x00020b08                sendchar
+ .text          0x00020b30      0x12a sp_driver.o
+                0x00020c0e                SP_BootCRC
+                0x00020b4e                SP_ReadUserSignatureByte
+                0x00020b86                SP_EraseApplicationSection
+                0x00020bd2                SP_EraseWriteApplicationPage
+                0x00020bf2                SP_WriteBootPage
+                0x00020b9a                SP_LoadFlashWord
+                0x00020b70                SP_ReadLockBits
+                0x00020b7e                SP_WriteUserSignatureRow
+                0x00020bfe                SP_EraseWriteBootPage
+                0x00020c0a                SP_ApplicationCRC
+                0x00020b8e                SP_EraseApplicationPage
+                0x00020be6                SP_EraseBootPage
+                0x00020b68                SP_WriteLockBits
+                0x00020b4a                SP_ReadCalibrationByte
+                0x00020b3c                SP_ReadWord
+                0x00020bc6                SP_WriteApplicationPage
+                0x00020b76                SP_EraseUserSignatureRow
+                0x00020c12                SP_LockSPM
+                0x00020ba4                SP_ReadFlashPage
+                0x00020b30                SP_ReadByte
+                0x00020b52                SP_ReadFuseByte
+                0x00020bde                SP_EraseFlashBuffer
+                0x00020c20                SP_WaitForSPM
+ .text          0x00020c5a        0x0 c:/winavr-20090313/bin/../lib/gcc/avr/4.3.2/avrxmega7\libgcc.a(_exit.o)
+                0x00020c5a                . = ALIGN (0x2)
+ *(.text.*)
+ .text.libgcc   0x00020c5a        0x0 c:/winavr-20090313/bin/../lib/gcc/avr/4.3.2/avrxmega7\libgcc.a(_exit.o)
+                0x00020c5a                . = ALIGN (0x2)
+ *(.fini9)
+ .fini9         0x00020c5a        0x0 c:/winavr-20090313/bin/../lib/gcc/avr/4.3.2/avrxmega7\libgcc.a(_exit.o)
+                0x00020c5a                exit
+                0x00020c5a                _exit
+ *(.fini9)
+ *(.fini8)
+ *(.fini8)
+ *(.fini7)
+ *(.fini7)
+ *(.fini6)
+ *(.fini6)
+ *(.fini5)
+ *(.fini5)
+ *(.fini4)
+ *(.fini4)
+ *(.fini3)
+ *(.fini3)
+ *(.fini2)
+ *(.fini2)
+ *(.fini1)
+ *(.fini1)
+ *(.fini0)
+ .fini0         0x00020c5a        0x4 c:/winavr-20090313/bin/../lib/gcc/avr/4.3.2/avrxmega7\libgcc.a(_exit.o)
+ *(.fini0)
+                0x00020c5e                _etext = .
+
+.BOOT           0x00020c5e       0x3a
+ .BOOT          0x00020c5e       0x3a sp_driver.o
+                0x00020c5e                SP_LoadFlashPage
+
+.data           0x00802000        0x0 load address 0x00020c5e
+                0x00802000                PROVIDE (__data_start, .)
+ *(.data)
+ .data          0x00802000        0x0 c:/winavr-20090313/bin/../lib/gcc/avr/4.3.2/../../../../avr/lib/avrxmega7/crtx128a1.o
+ .data          0x00802000        0x0 eeprom_driver.o
+ .data          0x00802000        0x0 main.o
+ .data          0x00802000        0x0 serial.o
+ .data          0x00802000        0x0 sp_driver.o
+ .data          0x00802000        0x0 c:/winavr-20090313/bin/../lib/gcc/avr/4.3.2/avrxmega7\libgcc.a(_exit.o)
+ *(.data*)
+ *(.rodata)
+ *(.rodata*)
+ *(.gnu.linkonce.d*)
+                0x00802000                . = ALIGN (0x2)
+                0x00802000                _edata = .
+                0x00802000                PROVIDE (__data_end, .)
+
+.bss            0x00802000        0x0
+                0x00802000                PROVIDE (__bss_start, .)
+ *(.bss)
+ .bss           0x00802000        0x0 c:/winavr-20090313/bin/../lib/gcc/avr/4.3.2/../../../../avr/lib/avrxmega7/crtx128a1.o
+ .bss           0x00802000        0x0 eeprom_driver.o
+ .bss           0x00802000        0x0 main.o
+ .bss           0x00802000        0x0 serial.o
+ .bss           0x00802000        0x0 sp_driver.o
+ .bss           0x00802000        0x0 c:/winavr-20090313/bin/../lib/gcc/avr/4.3.2/avrxmega7\libgcc.a(_exit.o)
+ *(.bss*)
+ *(COMMON)
+                0x00802000                PROVIDE (__bss_end, .)
+                0x00020c5e                __data_load_start = LOADADDR (.data)
+                0x00020c5e                __data_load_end = (__data_load_start + SIZEOF (.data))
+
+.noinit         0x00802000        0x0
+                0x00802000                PROVIDE (__noinit_start, .)
+ *(.noinit*)
+                0x00802000                PROVIDE (__noinit_end, .)
+                0x00802000                _end = .
+                0x00802000                PROVIDE (__heap_start, .)
+
+.eeprom         0x00810000        0x0
+ *(.eeprom*)
+                0x00810000                __eeprom_end = .
+
+.fuse
+ *(.fuse)
+ *(.lfuse)
+ *(.hfuse)
+ *(.efuse)
+
+.lock
+ *(.lock*)
+
+.signature
+ *(.signature*)
+
+.stab
+ *(.stab)
+
+.stabstr
+ *(.stabstr)
+
+.stab.excl
+ *(.stab.excl)
+
+.stab.exclstr
+ *(.stab.exclstr)
+
+.stab.index
+ *(.stab.index)
+
+.stab.indexstr
+ *(.stab.indexstr)
+
+.comment
+ *(.comment)
+
+.debug
+ *(.debug)
+
+.line
+ *(.line)
+
+.debug_srcinfo
+ *(.debug_srcinfo)
+
+.debug_sfnames
+ *(.debug_sfnames)
+
+.debug_aranges  0x00000000       0x60
+ *(.debug_aranges)
+ .debug_aranges
+                0x00000000       0x20 eeprom_driver.o
+ .debug_aranges
+                0x00000020       0x20 main.o
+ .debug_aranges
+                0x00000040       0x20 serial.o
+
+.debug_pubnames
+                0x00000000      0x16e
+ *(.debug_pubnames)
+ .debug_pubnames
+                0x00000000       0xee eeprom_driver.o
+ .debug_pubnames
+                0x000000ee       0x44 main.o
+ .debug_pubnames
+                0x00000132       0x3c serial.o
+
+.debug_info     0x00000000     0x1333
+ *(.debug_info)
+ .debug_info    0x00000000      0x4ee eeprom_driver.o
+ .debug_info    0x000004ee      0xb7f main.o
+ .debug_info    0x0000106d      0x2c6 serial.o
+ *(.gnu.linkonce.wi.*)
+
+.debug_abbrev   0x00000000      0x4e1
+ *(.debug_abbrev)
+ .debug_abbrev  0x00000000      0x1dc eeprom_driver.o
+ .debug_abbrev  0x000001dc      0x23d main.o
+ .debug_abbrev  0x00000419       0xc8 serial.o
+
+.debug_line     0x00000000      0xa33
+ *(.debug_line)
+ .debug_line    0x00000000      0x373 eeprom_driver.o
+ .debug_line    0x00000373      0x5b9 main.o
+ .debug_line    0x0000092c      0x107 serial.o
+
+.debug_frame    0x00000000      0x140
+ *(.debug_frame)
+ .debug_frame   0x00000000       0xb0 eeprom_driver.o
+ .debug_frame   0x000000b0       0x50 main.o
+ .debug_frame   0x00000100       0x40 serial.o
+
+.debug_str      0x00000000      0x9da
+ *(.debug_str)
+ .debug_str     0x00000000      0x4f6 eeprom_driver.o
+                                0x53e (size before relaxing)
+ .debug_str     0x000004f6      0x4ba main.o
+                                0x657 (size before relaxing)
+ .debug_str     0x000009b0       0x2a serial.o
+                                0x219 (size before relaxing)
+
+.debug_loc      0x00000000      0x6ad
+ *(.debug_loc)
+ .debug_loc     0x00000000      0x187 eeprom_driver.o
+ .debug_loc     0x00000187      0x500 main.o
+ .debug_loc     0x00000687       0x26 serial.o
+
+.debug_macinfo
+ *(.debug_macinfo)
+OUTPUT(BootloaderMkII_gcc.elf elf32-avr)
+LOAD linker stubs

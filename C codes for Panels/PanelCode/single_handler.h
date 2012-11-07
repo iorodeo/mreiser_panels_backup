@@ -15,11 +15,11 @@ Description: Header file for the interrupt handler routines. Defines constants a
 /* Interrupt Handler Definitions */
 #define TCCR0_VAL 0x01				/* prescale timer by 8 */
 
-#ifndef TRUE
-#define TRUE 1
-#endif
 #ifndef FALSE
 #define FALSE 0
+#endif
+#ifndef TRUE
+#define TRUE (!FALSE)
 #endif
 
 /* Interrupt Handler Routine Prototypes */

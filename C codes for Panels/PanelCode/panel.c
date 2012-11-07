@@ -29,6 +29,8 @@ unsigned char Row_Compression = 0;
 //unsigned char One_map = 1;
 unsigned char start_up = 1;
 
+//#define MIRRORX	// Uncomment this to mirror the pattern horizontally.
+//#define MIRRORY   // Uncomment this to mirror the pattern vertically.
 	
 void i2cSlaveReceiveService(u08 receiveDataLength, u08* receiveData);
 
@@ -273,36 +275,61 @@ void i2cSlaveReceiveService(u08 receiveDataLength, u08* receiveData)
 
 
 
+// ReverseBits() - Reverse the bit order of each byte in the given array of bytes.
+void ReverseBits (unsigned char *px, unsigned char nBytes)
+{
+	unsigned char i;
+	unsigned char x;
+	
+	for (i=0; i<nBytes; i++)
+	{
+		x = *(px+i);	// Copy the byte first, as opposed to multiple derefs & adds.
+		x = ((x>>4) & 0x0F) | ((x & 0x0F) << 4); 
+		x = ((x>>2) & 0x33) | ((x & 0x33) << 2);
+		x = ((x>>1) & 0x55) | ((x & 0x55) << 1);
+		*(px+i) = x;
+	}
+}
+
+
 void UpdateDisplay(void)
 {
 	volatile unsigned char temp_frame;
-	const unsigned char addrval[] = 
-			{0x01,0x02,0x04,0x08,0x10,0x20,0x40,0x80};
+	unsigned char			colData;
+	//const unsigned char	addrval[] = {0x01,0x02,0x04,0x08,0x10,0x20,0x40,0x80};
+		
+
+	
+#ifdef MIRRORX
+	colData = 7-CurrentCol;
+#else
+	colData = CurrentCol;
+#endif
 		
 
 	// clear the data ports
 	LED_DATA_PORT_05 = 0x00;
 	LED_DATA_PORT_67 = 0x08;
 	//delay(10);
-	LED_ADDRESS_PORT = addrval[CurrentCol];
+	LED_ADDRESS_PORT = (1 << CurrentCol); // i.e. addrval[CurrentCol]; 
 
-	if (Gray_Scale == 1) {
-		LED_DATA_PORT_05 = MASK_05 & DisplayBuffer[CurrentCol];
-		LED_DATA_PORT_67 |= (MASK_67 & DisplayBuffer[CurrentCol]) >> 6;
-		
+	if (Gray_Scale == 1) 
+	{
+		LED_DATA_PORT_05 = MASK_05 & DisplayBuffer[colData];
+		LED_DATA_PORT_67 |= (MASK_67 & DisplayBuffer[colData]) >> 6;
 	} else if (Gray_Scale == 2) {
 	
 		switch(CurrentFrame) {
 			case 0:
-				temp_frame = GS_Buffer[0][CurrentCol];
+				temp_frame = GS_Buffer[0][colData];
 				break;
 			
 			case 1:
-				temp_frame = GS_Buffer[0][CurrentCol];
+				temp_frame = GS_Buffer[0][colData];
 				break;
 				
 			case 2:
-				temp_frame = GS_Buffer[1][CurrentCol];
+				temp_frame = GS_Buffer[1][colData];
 				break;
 			default:
 				break;
@@ -320,25 +347,25 @@ void UpdateDisplay(void)
 		switch(CurrentFrame) {
 				
 			case 0:
-				temp_frame = GS_Buffer[0][CurrentCol];
+				temp_frame = GS_Buffer[0][colData];
 				break;
 			case 1:
-				temp_frame = GS_Buffer[0][CurrentCol];
+				temp_frame = GS_Buffer[0][colData];
 				break;
 			case 2:
-				temp_frame = GS_Buffer[0][CurrentCol];	
+				temp_frame = GS_Buffer[0][colData];	
 				break;
 			case 3:
-				temp_frame = (GS_Buffer[0][CurrentCol]);	
+				temp_frame = (GS_Buffer[0][colData]);	
 				break;
 			case 4:
-				temp_frame = GS_Buffer[1][CurrentCol];	
+				temp_frame = GS_Buffer[1][colData];	
 				break;	
 			case 5:
-				temp_frame = GS_Buffer[1][CurrentCol];
+				temp_frame = GS_Buffer[1][colData];
 				break;
 			case 6:
-				temp_frame = GS_Buffer[2][CurrentCol];
+				temp_frame = GS_Buffer[2][colData];
 				break;				
 			default:
 				break;
@@ -355,49 +382,49 @@ void UpdateDisplay(void)
 		switch(CurrentFrame) {
 				
 			case 0:
-				temp_frame = GS_Buffer[0][CurrentCol];
+				temp_frame = GS_Buffer[0][colData];
 				break;
 			case 1:
-				temp_frame = GS_Buffer[0][CurrentCol];
+				temp_frame = GS_Buffer[0][colData];
 				break;
 			case 2:
-				temp_frame =  GS_Buffer[0][CurrentCol];
+				temp_frame =  GS_Buffer[0][colData];
 				break;
 			case 3:
-				temp_frame =  GS_Buffer[0][CurrentCol];
+				temp_frame =  GS_Buffer[0][colData];
 				break;
 			case 4:
-				temp_frame =  GS_Buffer[0][CurrentCol];
+				temp_frame =  GS_Buffer[0][colData];
 				break;	
 			case 5:
-				temp_frame =  GS_Buffer[0][CurrentCol];
+				temp_frame =  GS_Buffer[0][colData];
 				break;
 			case 6:
-				temp_frame =  GS_Buffer[0][CurrentCol];;
+				temp_frame =  GS_Buffer[0][colData];;
 				break;
  			case 7:
-				temp_frame =  GS_Buffer[0][CurrentCol];
+				temp_frame =  GS_Buffer[0][colData];
 				break;
 			case 8:
-				temp_frame =  GS_Buffer[1][CurrentCol];
+				temp_frame =  GS_Buffer[1][colData];
 				break;
 			case 9:
-				temp_frame = GS_Buffer[1][CurrentCol];
+				temp_frame = GS_Buffer[1][colData];
 				break;
 			case 10:
-				temp_frame = GS_Buffer[1][CurrentCol];
+				temp_frame = GS_Buffer[1][colData];
 				break;
 			case 11:
-				temp_frame = GS_Buffer[1][CurrentCol];
+				temp_frame = GS_Buffer[1][colData];
 				break;	
 			case 12:
-				temp_frame = GS_Buffer[2][CurrentCol];
+				temp_frame = GS_Buffer[2][colData];
 				break;
 			case 13:
-				temp_frame = GS_Buffer[2][CurrentCol];
+				temp_frame = GS_Buffer[2][colData];
 				break;
  			case 14:
-				temp_frame = GS_Buffer[3][CurrentCol];
+				temp_frame = GS_Buffer[3][colData];
 				break;
 			default:
 				break;
@@ -408,7 +435,7 @@ void UpdateDisplay(void)
 		if (CurrentCol == 0) {
 			if(!(++CurrentFrame < 15)) 
 				CurrentFrame = 0;
-	}	
+        }	
 	}
 
 
@@ -418,12 +445,19 @@ void UpdateDisplay(void)
 
 void DisplayChar(unsigned char c,unsigned char col)
 {
+#ifdef MIRRORY
+	ReverseBits(&c,1);
+#endif
+	
 	DisplayBuffer[col]=c;
 }
 
 
 void LoadPattern1(unsigned char pattern_byte)
 {
+#ifdef MIRRORY
+	ReverseBits(&pattern_byte,1);
+#endif
 	
 	//should be done as above - but below is apparently 4 times faster!!!
 	if (pattern_byte & (1<<0) ) DisplayBuffer[0] = 0xff; else DisplayBuffer[0] = 0x00;	
@@ -440,6 +474,9 @@ void LoadPattern1(unsigned char pattern_byte)
 
 void LoadPattern3(unsigned char* pattern)
 {
+#ifdef MIRRORY
+	ReverseBits(pattern,3);
+#endif
 	
 	//should be done as above - but below is apparently 4 times faster!!!
 	if (*(pattern) & (1<<0) ) GS_Buffer[0][0] = 0xff; else GS_Buffer[0][0] = 0x00;
@@ -472,6 +509,9 @@ void LoadPattern3(unsigned char* pattern)
 
 void LoadPattern4(unsigned char* pattern)
 {
+#ifdef MIRRORY
+	ReverseBits(pattern,4);
+#endif
 
 	if (*(pattern) & (1<<0) ) GS_Buffer[0][0] = 0xff; else GS_Buffer[0][0] = 0x00;
 	if (*(pattern) & (1<<1) ) GS_Buffer[0][1] = 0xff; else GS_Buffer[0][1] = 0x00;
@@ -513,6 +553,9 @@ void LoadPattern4(unsigned char* pattern)
 
 void LoadPattern8(unsigned char* pattern)
 {
+#ifdef MIRRORY
+	ReverseBits(pattern,8);
+#endif
 
 		DisplayBuffer[0] = (*(pattern + 0));
 		DisplayBuffer[1] = (*(pattern + 1));
@@ -528,6 +571,9 @@ void LoadPattern8(unsigned char* pattern)
 
 void LoadPattern16(unsigned char* pattern)
 {
+#ifdef MIRRORY
+	ReverseBits(pattern,16);
+#endif
 	GS_Buffer[0][0] = (*(pattern + 0));
 	GS_Buffer[0][1] = (*(pattern + 1));
 	GS_Buffer[0][2] = (*(pattern + 2));
@@ -550,6 +596,9 @@ void LoadPattern16(unsigned char* pattern)
 
 void LoadPattern24(unsigned char* pattern)
 {
+#ifdef MIRRORY
+	ReverseBits(pattern,24);
+#endif
 	GS_Buffer[0][0] = (*(pattern + 0));
 	GS_Buffer[0][1] = (*(pattern + 1));
 	GS_Buffer[0][2] = (*(pattern + 2));
@@ -580,6 +629,9 @@ void LoadPattern24(unsigned char* pattern)
 
 void LoadPattern32(unsigned char* pattern)
 {
+#ifdef MIRRORY
+	ReverseBits(pattern,32);
+#endif
 	GS_Buffer[0][0] = (*(pattern + 0));
 	GS_Buffer[0][1] = (*(pattern + 1));
 	GS_Buffer[0][2] = (*(pattern + 2));
@@ -619,6 +671,9 @@ void LoadPattern32(unsigned char* pattern)
 
 void LoadPatternEEP(unsigned char *pattern)
 {
+#ifdef MIRRORY
+	ReverseBits(pattern,8);
+#endif
 	DisplayBuffer[0] = eeprom_rb((uint8_t*)(pattern + 0));
 	DisplayBuffer[1] = eeprom_rb((uint8_t*)(pattern + 1));
 	DisplayBuffer[2] = eeprom_rb((uint8_t*)(pattern + 2));

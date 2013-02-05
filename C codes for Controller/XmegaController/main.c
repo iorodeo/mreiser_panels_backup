@@ -809,7 +809,7 @@ void fetch_display_frame(uint16_t f_num, uint16_t Xindex, uint16_t Yindex){
     // suppose f_num is from 0 to (n_num * y_num - 1)
     uint8_t j, panel_index, packet_sent;
     uint8_t gscale[4];
-    uint8_t *FLASH;
+    uint8_t FLASH[32];
     uint16_t len, cnt, buff_index;
     uint32_t offset;
     uint8_t res;
@@ -828,6 +828,7 @@ void fetch_display_frame(uint16_t f_num, uint16_t Xindex, uint16_t Yindex){
 		
 		
     uint8_t  frameBuff[len];
+	//uint8_t * FLASH = &frameBuff[0];
     offset = 512 + (uint32_t)f_num * 512 * block_per_frame;
 
     res = f_lseek(&file1, offset);
@@ -843,9 +844,10 @@ void fetch_display_frame(uint16_t f_num, uint16_t Xindex, uint16_t Yindex){
             buff_index = 0;
             
             for (panel_index = 1; panel_index <= num_panels; panel_index++){
-				FLASH = &frameBuff[buff_index];
-				buff_index = buff_index + bytes_per_panel_frame;
-
+                for(j = 0;j < bytes_per_panel_frame;j++){
+                    FLASH[j] = frameBuff[buff_index++]; //not good for performance, no need to copy the data
+                }
+				
                 packet_sent = 0; //used with compression to simplify coniditionals.
                 if (ident_compress == 1) {
                     if (bytes_per_panel_frame == 8){

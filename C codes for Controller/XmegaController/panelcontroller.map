@@ -212,7 +212,7 @@ LOAD c:/winavr-20100110/bin/../lib/gcc/avr/4.3.3/avrxmega7\libgcc.a
 .rela.plt
  *(.rela.plt)
 
-.text           0x00000000     0xc1f4
+.text           0x00000000     0xc0e6
  *(.vectors)
  .vectors       0x00000000      0x1f4 c:/winavr-20100110/bin/../lib/gcc/avr/4.3.3/../../../../avr/lib/avrxmega7/crtx128a1.o
                 0x00000000                __vectors
@@ -390,247 +390,247 @@ LOAD c:/winavr-20100110/bin/../lib/gcc/avr/4.3.3/avrxmega7\libgcc.a
                 0x000012b2                __vector_87
                 0x000012b2                __vector_65
                 0x000012b2                __vector_120
- .text          0x000012b6     0x35b0 main.o
+ .text          0x000012b6     0x34a2 main.o
                 0x000012d8                increment_index_x
                 0x00001664                handle_message_length_63
                 0x000019a8                fetch_update_funcX
                 0x00001430                decrement_index_y
                 0x00001cd0                update_funcCnt_x
                 0x000027a0                handle_message_length_3
-                0x00004728                __vector_46
+                0x0000461a                __vector_46
                 0x000026a8                i2cMasterSend
-                0x000035c4                set_pattern
-                0x00003964                handle_message_length_2
+                0x000034b6                set_pattern
+                0x00003856                handle_message_length_2
                 0x00001696                dump_mat
-                0x000046be                __vector_107
+                0x000045b0                __vector_107
                 0x0000275c                handle_message_length_4
-                0x00003502                benchmark_pattern
+                0x000033f4                benchmark_pattern
                 0x000012b6                handle_message_length_62
                 0x00002b40                Update_display
-                0x000037ce                handle_message_length_5
-                0x00003a0e                handle_message_length_1
-                0x000047fc                __vector_13
+                0x000036c0                handle_message_length_5
+                0x00003900                handle_message_length_1
+                0x000046ee                __vector_13
                 0x00002a1c                set_hwConfig
                 0x000014a0                __vector_100
                 0x00001e9c                set_vel_func
                 0x00001b30                update_funcCnt_y
                 0x00002f24                fetch_display_frame
-                0x00004792                __vector_76
+                0x00004684                __vector_76
                 0x00002e78                display_dumped_frame
-                0x000041d6                main
+                0x000040c8                main
                 0x00001348                increment_index_y
                 0x00001586                set_default_func
                 0x000013c0                decrement_index_x
                 0x00001820                fetch_update_funcY
                 0x00002b38                toggle_trigger
                 0x000022e4                set_pos_func
- .text          0x00004866     0x18a6 utils.o
-                0x00004eba                verifyPage
-                0x000052da                eeprom_panel
-                0x000048d6                ledToggle
-                0x00004996                digitalRead
-                0x00004f78                readPage
-                0x00004afe                analogWrite
-                0x000049fc                digitalToggle
-                0x00004d80                readEEPage
-                0x000049ba                digitalWrite
-                0x00004866                CCPWrite
-                0x0000492a                digitalMode
-                0x00005eca                init_all
-                0x000058be                flash_panel
-                0x00004b4a                test_DIO
-                0x00004c02                test_ADC
-                0x000048fc                ledBlink
-                0x00004cc6                verifyEEPage
-                0x0000502c                progPage
-                0x00004890                ledWrite
-                0x00004a1e                analogRead
-                0x00004e30                progEEPage
-                0x00004bd2                SystemReset
- .text          0x0000610c      0x34a uart.o
-                0x00006156                uart_get
-                0x00006216                fill_Rx_buffer
-                0x0000641e                createRxBuff
-                0x000061ec                uart_putstr
-                0x000062fa                __vector_25
-                0x0000614a                uart_test
-                0x00006410                releaseRxBuff
-                0x0000610c                uart_init
-                0x00006208                uart_crlf
-                0x000062c2                send_Tx_buffer
-                0x000061b0                uart_put
-                0x0000639a                __vector_26
- .text          0x00006456      0x1da handler.o
-                0x000065d2                Update_Reg_Handler
-                0x00006456                Handler_Init
-                0x00006586                Reg_Handler
-                0x00006484                __vector_47
- .text          0x00006630      0x2ec twi.o
-                0x00006742                TWI_MasterArbitrationLostBusErrorHandler
-                0x00006664                TWI_MasterReady
-                0x00006674                TWI_MasterWriteRead
-                0x000068ae                TWI_MasterReleaseBuff
-                0x00006724                TWI_MasterRead
-                0x00006736                TWI_MasterWrite
-                0x00006650                TWI_MasterState
-                0x000068ce                TWI_MasterCreateBuff
-                0x000067ea                TWI_MasterReadHandler
-                0x0000676c                TWI_MasterWriteHandler
-                0x00006868                TWI_MasterInterruptHandler
-                0x00006630                TWI_MasterInit
- .text          0x0000691c     0x3ce4 ff.o
-                0x0000a58e                f_gets
-                0x00009da0                f_printf
-                0x00008f3c                f_rename
-                0x00008b9e                f_chdir
-                0x00008412                f_truncate
-                0x00009484                f_unlink
-                0x00009d02                f_putc
-                0x00009d58                f_puts
-                0x00006a58                f_chdrive
-                0x00009894                f_close
-                0x0000a23a                f_read
-                0x000095ae                f_readdir
-                0x00008eb4                f_chmod
-                0x000097f4                f_sync
-                0x00006a6e                f_mkfs
-                0x00006a10                f_mount
-                0x00008aea                f_opendir
-                0x00007f60                f_lseek
-                0x00008a84                f_stat
-                0x00008e26                f_utime
-                0x000098b0                f_write
-                0x0000a00c                f_open
-                0x00009166                f_mkdir
-                0x0000963e                f_getfree
- .text          0x0000a600      0xaac mmc.o
-                0x0000aee0                disk_initialize
-                0x0000a8f4                disk_status
-                0x0000aac8                disk_ioctl
-                0x0000ae2e                disk_timerproc
-                0x0000a9cc                disk_write
-                0x0000a902                disk_read
-                0x0000ae7a                __vector_53
- .text          0x0000b0ac       0x3a rtc.o
-                0x0000b0d6                rtc_init
-                0x0000b0ac                rtc_gettime
-                0x0000b0dc                get_fattime
-                0x0000b0d0                rtc_settime
- .text          0x0000b0e6      0x12c timer.o
-                0x0000b1b4                timer_fine_tic
-                0x0000b144                timer_init
-                0x0000b16a                Wait
-                0x0000b1c2                timer_fine_toc
-                0x0000b0e6                __vector_108
-                0x0000b1d2                timer_coarse_tic
-                0x0000b1fc                timer_coarse_toc
- .text          0x0000b212      0x202 eeprom_driver.o
-                0x0000b212                EEPROM_ReadByte
-                0x0000b260                EEPROM_WaitForNVM
-                0x0000b2f2                EEPROM_LoadByte
-                0x0000b3b4                EEPROM_SplitWritePage
-                0x0000b338                EEPROM_AtomicWritePage
-                0x0000b310                EEPROM_LoadPage
-                0x0000b3f2                EEPROM_EraseAll
-                0x0000b26a                EEPROM_FlushBuffer
-                0x0000b376                EEPROM_ErasePage
-                0x0000b294                EEPROM_WriteByte
- .text          0x0000b414      0x214 xitoa.o
-                0x0000b440                xitoa
-                0x0000b572                xatoi
-                0x0000b4b6                xprintf
-                0x0000b432                xputs
-                0x0000b414                xputc
- .text          0x0000b628        0x0 c:/winavr-20100110/bin/../lib/gcc/avr/4.3.3/avrxmega7\libgcc.a(_mulsi3.o)
- .text          0x0000b628        0x0 c:/winavr-20100110/bin/../lib/gcc/avr/4.3.3/avrxmega7\libgcc.a(_udivmodhi4.o)
- .text          0x0000b628        0x0 c:/winavr-20100110/bin/../lib/gcc/avr/4.3.3/avrxmega7\libgcc.a(_divmodhi4.o)
- .text          0x0000b628        0x0 c:/winavr-20100110/bin/../lib/gcc/avr/4.3.3/avrxmega7\libgcc.a(_udivmodsi4.o)
- .text          0x0000b628        0x0 c:/winavr-20100110/bin/../lib/gcc/avr/4.3.3/avrxmega7\libgcc.a(_divmodsi4.o)
- .text          0x0000b628        0x0 c:/winavr-20100110/bin/../lib/gcc/avr/4.3.3/avrxmega7\libgcc.a(_prologue.o)
- .text          0x0000b628        0x0 c:/winavr-20100110/bin/../lib/gcc/avr/4.3.3/avrxmega7\libgcc.a(_epilogue.o)
- .text          0x0000b628        0x0 c:/winavr-20100110/bin/../lib/gcc/avr/4.3.3/avrxmega7\libgcc.a(_exit.o)
- .text          0x0000b628        0x0 c:/winavr-20100110/bin/../lib/gcc/avr/4.3.3/avrxmega7\libgcc.a(_tablejump.o)
- .text          0x0000b628        0x0 c:/winavr-20100110/bin/../lib/gcc/avr/4.3.3/avrxmega7\libgcc.a(_clear_bss.o)
- .text          0x0000b628        0x0 c:/winavr-20100110/bin/../lib/gcc/avr/4.3.3/../../../../avr/lib/avrxmega7\libc.a(malloc.o)
- .text          0x0000b628        0x0 c:/winavr-20100110/bin/../lib/gcc/avr/4.3.3/../../../../avr/lib/avrxmega7\libc.a(strtoul.o)
- .text          0x0000b628        0x0 c:/winavr-20100110/bin/../lib/gcc/avr/4.3.3/../../../../avr/lib/avrxmega7\libc.a(isspace.o)
- .text          0x0000b628        0x0 c:/winavr-20100110/bin/../lib/gcc/avr/4.3.3/../../../../avr/lib/avrxmega7\libc.a(sprintf.o)
- .text          0x0000b628        0x0 c:/winavr-20100110/bin/../lib/gcc/avr/4.3.3/../../../../avr/lib/avrxmega7\libc.a(vfprintf_std.o)
- .text          0x0000b628        0x0 c:/winavr-20100110/bin/../lib/gcc/avr/4.3.3/../../../../avr/lib/avrxmega7\libc.a(eerd_byte_atxmega128a1.o)
- .text          0x0000b628        0x0 c:/winavr-20100110/bin/../lib/gcc/avr/4.3.3/../../../../avr/lib/avrxmega7\libc.a(eewr_byte_atxmega128a1.o)
- .text          0x0000b628        0x0 c:/winavr-20100110/bin/../lib/gcc/avr/4.3.3/../../../../avr/lib/avrxmega7\libc.a(errno.o)
- .text          0x0000b628        0x0 c:/winavr-20100110/bin/../lib/gcc/avr/4.3.3/../../../../avr/lib/avrxmega7\libc.a(cty_isfalse.o)
- .text          0x0000b628        0x0 c:/winavr-20100110/bin/../lib/gcc/avr/4.3.3/../../../../avr/lib/avrxmega7\libc.a(strnlen_P.o)
- .text          0x0000b628        0x0 c:/winavr-20100110/bin/../lib/gcc/avr/4.3.3/../../../../avr/lib/avrxmega7\libc.a(strnlen.o)
- .text          0x0000b628        0x0 c:/winavr-20100110/bin/../lib/gcc/avr/4.3.3/../../../../avr/lib/avrxmega7\libc.a(fputc.o)
- .text          0x0000b628        0x0 c:/winavr-20100110/bin/../lib/gcc/avr/4.3.3/../../../../avr/lib/avrxmega7\libc.a(ultoa_invert.o)
-                0x0000b628                . = ALIGN (0x2)
+ .text          0x00004758     0x18a6 utils.o
+                0x00004dac                verifyPage
+                0x000051cc                eeprom_panel
+                0x000047c8                ledToggle
+                0x00004888                digitalRead
+                0x00004e6a                readPage
+                0x000049f0                analogWrite
+                0x000048ee                digitalToggle
+                0x00004c72                readEEPage
+                0x000048ac                digitalWrite
+                0x00004758                CCPWrite
+                0x0000481c                digitalMode
+                0x00005dbc                init_all
+                0x000057b0                flash_panel
+                0x00004a3c                test_DIO
+                0x00004af4                test_ADC
+                0x000047ee                ledBlink
+                0x00004bb8                verifyEEPage
+                0x00004f1e                progPage
+                0x00004782                ledWrite
+                0x00004910                analogRead
+                0x00004d22                progEEPage
+                0x00004ac4                SystemReset
+ .text          0x00005ffe      0x34a uart.o
+                0x00006048                uart_get
+                0x00006108                fill_Rx_buffer
+                0x00006310                createRxBuff
+                0x000060de                uart_putstr
+                0x000061ec                __vector_25
+                0x0000603c                uart_test
+                0x00006302                releaseRxBuff
+                0x00005ffe                uart_init
+                0x000060fa                uart_crlf
+                0x000061b4                send_Tx_buffer
+                0x000060a2                uart_put
+                0x0000628c                __vector_26
+ .text          0x00006348      0x1da handler.o
+                0x000064c4                Update_Reg_Handler
+                0x00006348                Handler_Init
+                0x00006478                Reg_Handler
+                0x00006376                __vector_47
+ .text          0x00006522      0x2ec twi.o
+                0x00006634                TWI_MasterArbitrationLostBusErrorHandler
+                0x00006556                TWI_MasterReady
+                0x00006566                TWI_MasterWriteRead
+                0x000067a0                TWI_MasterReleaseBuff
+                0x00006616                TWI_MasterRead
+                0x00006628                TWI_MasterWrite
+                0x00006542                TWI_MasterState
+                0x000067c0                TWI_MasterCreateBuff
+                0x000066dc                TWI_MasterReadHandler
+                0x0000665e                TWI_MasterWriteHandler
+                0x0000675a                TWI_MasterInterruptHandler
+                0x00006522                TWI_MasterInit
+ .text          0x0000680e     0x3ce4 ff.o
+                0x0000a480                f_gets
+                0x00009c92                f_printf
+                0x00008e2e                f_rename
+                0x00008a90                f_chdir
+                0x00008304                f_truncate
+                0x00009376                f_unlink
+                0x00009bf4                f_putc
+                0x00009c4a                f_puts
+                0x0000694a                f_chdrive
+                0x00009786                f_close
+                0x0000a12c                f_read
+                0x000094a0                f_readdir
+                0x00008da6                f_chmod
+                0x000096e6                f_sync
+                0x00006960                f_mkfs
+                0x00006902                f_mount
+                0x000089dc                f_opendir
+                0x00007e52                f_lseek
+                0x00008976                f_stat
+                0x00008d18                f_utime
+                0x000097a2                f_write
+                0x00009efe                f_open
+                0x00009058                f_mkdir
+                0x00009530                f_getfree
+ .text          0x0000a4f2      0xaac mmc.o
+                0x0000add2                disk_initialize
+                0x0000a7e6                disk_status
+                0x0000a9ba                disk_ioctl
+                0x0000ad20                disk_timerproc
+                0x0000a8be                disk_write
+                0x0000a7f4                disk_read
+                0x0000ad6c                __vector_53
+ .text          0x0000af9e       0x3a rtc.o
+                0x0000afc8                rtc_init
+                0x0000af9e                rtc_gettime
+                0x0000afce                get_fattime
+                0x0000afc2                rtc_settime
+ .text          0x0000afd8      0x12c timer.o
+                0x0000b0a6                timer_fine_tic
+                0x0000b036                timer_init
+                0x0000b05c                Wait
+                0x0000b0b4                timer_fine_toc
+                0x0000afd8                __vector_108
+                0x0000b0c4                timer_coarse_tic
+                0x0000b0ee                timer_coarse_toc
+ .text          0x0000b104      0x202 eeprom_driver.o
+                0x0000b104                EEPROM_ReadByte
+                0x0000b152                EEPROM_WaitForNVM
+                0x0000b1e4                EEPROM_LoadByte
+                0x0000b2a6                EEPROM_SplitWritePage
+                0x0000b22a                EEPROM_AtomicWritePage
+                0x0000b202                EEPROM_LoadPage
+                0x0000b2e4                EEPROM_EraseAll
+                0x0000b15c                EEPROM_FlushBuffer
+                0x0000b268                EEPROM_ErasePage
+                0x0000b186                EEPROM_WriteByte
+ .text          0x0000b306      0x214 xitoa.o
+                0x0000b332                xitoa
+                0x0000b464                xatoi
+                0x0000b3a8                xprintf
+                0x0000b324                xputs
+                0x0000b306                xputc
+ .text          0x0000b51a        0x0 c:/winavr-20100110/bin/../lib/gcc/avr/4.3.3/avrxmega7\libgcc.a(_mulsi3.o)
+ .text          0x0000b51a        0x0 c:/winavr-20100110/bin/../lib/gcc/avr/4.3.3/avrxmega7\libgcc.a(_udivmodhi4.o)
+ .text          0x0000b51a        0x0 c:/winavr-20100110/bin/../lib/gcc/avr/4.3.3/avrxmega7\libgcc.a(_divmodhi4.o)
+ .text          0x0000b51a        0x0 c:/winavr-20100110/bin/../lib/gcc/avr/4.3.3/avrxmega7\libgcc.a(_udivmodsi4.o)
+ .text          0x0000b51a        0x0 c:/winavr-20100110/bin/../lib/gcc/avr/4.3.3/avrxmega7\libgcc.a(_divmodsi4.o)
+ .text          0x0000b51a        0x0 c:/winavr-20100110/bin/../lib/gcc/avr/4.3.3/avrxmega7\libgcc.a(_prologue.o)
+ .text          0x0000b51a        0x0 c:/winavr-20100110/bin/../lib/gcc/avr/4.3.3/avrxmega7\libgcc.a(_epilogue.o)
+ .text          0x0000b51a        0x0 c:/winavr-20100110/bin/../lib/gcc/avr/4.3.3/avrxmega7\libgcc.a(_exit.o)
+ .text          0x0000b51a        0x0 c:/winavr-20100110/bin/../lib/gcc/avr/4.3.3/avrxmega7\libgcc.a(_tablejump.o)
+ .text          0x0000b51a        0x0 c:/winavr-20100110/bin/../lib/gcc/avr/4.3.3/avrxmega7\libgcc.a(_clear_bss.o)
+ .text          0x0000b51a        0x0 c:/winavr-20100110/bin/../lib/gcc/avr/4.3.3/../../../../avr/lib/avrxmega7\libc.a(malloc.o)
+ .text          0x0000b51a        0x0 c:/winavr-20100110/bin/../lib/gcc/avr/4.3.3/../../../../avr/lib/avrxmega7\libc.a(strtoul.o)
+ .text          0x0000b51a        0x0 c:/winavr-20100110/bin/../lib/gcc/avr/4.3.3/../../../../avr/lib/avrxmega7\libc.a(isspace.o)
+ .text          0x0000b51a        0x0 c:/winavr-20100110/bin/../lib/gcc/avr/4.3.3/../../../../avr/lib/avrxmega7\libc.a(sprintf.o)
+ .text          0x0000b51a        0x0 c:/winavr-20100110/bin/../lib/gcc/avr/4.3.3/../../../../avr/lib/avrxmega7\libc.a(vfprintf_std.o)
+ .text          0x0000b51a        0x0 c:/winavr-20100110/bin/../lib/gcc/avr/4.3.3/../../../../avr/lib/avrxmega7\libc.a(eerd_byte_atxmega128a1.o)
+ .text          0x0000b51a        0x0 c:/winavr-20100110/bin/../lib/gcc/avr/4.3.3/../../../../avr/lib/avrxmega7\libc.a(eewr_byte_atxmega128a1.o)
+ .text          0x0000b51a        0x0 c:/winavr-20100110/bin/../lib/gcc/avr/4.3.3/../../../../avr/lib/avrxmega7\libc.a(errno.o)
+ .text          0x0000b51a        0x0 c:/winavr-20100110/bin/../lib/gcc/avr/4.3.3/../../../../avr/lib/avrxmega7\libc.a(cty_isfalse.o)
+ .text          0x0000b51a        0x0 c:/winavr-20100110/bin/../lib/gcc/avr/4.3.3/../../../../avr/lib/avrxmega7\libc.a(strnlen_P.o)
+ .text          0x0000b51a        0x0 c:/winavr-20100110/bin/../lib/gcc/avr/4.3.3/../../../../avr/lib/avrxmega7\libc.a(strnlen.o)
+ .text          0x0000b51a        0x0 c:/winavr-20100110/bin/../lib/gcc/avr/4.3.3/../../../../avr/lib/avrxmega7\libc.a(fputc.o)
+ .text          0x0000b51a        0x0 c:/winavr-20100110/bin/../lib/gcc/avr/4.3.3/../../../../avr/lib/avrxmega7\libc.a(ultoa_invert.o)
+                0x0000b51a                . = ALIGN (0x2)
  *(.text.*)
- .text.libgcc   0x0000b628       0x3e c:/winavr-20100110/bin/../lib/gcc/avr/4.3.3/avrxmega7\libgcc.a(_mulsi3.o)
-                0x0000b628                __mulsi3
- .text.libgcc   0x0000b666       0x28 c:/winavr-20100110/bin/../lib/gcc/avr/4.3.3/avrxmega7\libgcc.a(_udivmodhi4.o)
-                0x0000b666                __udivmodhi4
- .text.libgcc   0x0000b68e       0x26 c:/winavr-20100110/bin/../lib/gcc/avr/4.3.3/avrxmega7\libgcc.a(_divmodhi4.o)
-                0x0000b68e                __divmodhi4
-                0x0000b68e                _div
- .text.libgcc   0x0000b6b4       0x44 c:/winavr-20100110/bin/../lib/gcc/avr/4.3.3/avrxmega7\libgcc.a(_udivmodsi4.o)
-                0x0000b6b4                __udivmodsi4
- .text.libgcc   0x0000b6f8       0x36 c:/winavr-20100110/bin/../lib/gcc/avr/4.3.3/avrxmega7\libgcc.a(_divmodsi4.o)
-                0x0000b6f8                __divmodsi4
- .text.libgcc   0x0000b72e       0x38 c:/winavr-20100110/bin/../lib/gcc/avr/4.3.3/avrxmega7\libgcc.a(_prologue.o)
-                0x0000b72e                __prologue_saves__
- .text.libgcc   0x0000b766       0x36 c:/winavr-20100110/bin/../lib/gcc/avr/4.3.3/avrxmega7\libgcc.a(_epilogue.o)
-                0x0000b766                __epilogue_restores__
- .text.libgcc   0x0000b79c        0x0 c:/winavr-20100110/bin/../lib/gcc/avr/4.3.3/avrxmega7\libgcc.a(_exit.o)
- .text.libgcc   0x0000b79c        0xc c:/winavr-20100110/bin/../lib/gcc/avr/4.3.3/avrxmega7\libgcc.a(_tablejump.o)
-                0x0000b7a0                __tablejump__
-                0x0000b79c                __tablejump2__
- .text.libgcc   0x0000b7a8        0x0 c:/winavr-20100110/bin/../lib/gcc/avr/4.3.3/avrxmega7\libgcc.a(_clear_bss.o)
+ .text.libgcc   0x0000b51a       0x3e c:/winavr-20100110/bin/../lib/gcc/avr/4.3.3/avrxmega7\libgcc.a(_mulsi3.o)
+                0x0000b51a                __mulsi3
+ .text.libgcc   0x0000b558       0x28 c:/winavr-20100110/bin/../lib/gcc/avr/4.3.3/avrxmega7\libgcc.a(_udivmodhi4.o)
+                0x0000b558                __udivmodhi4
+ .text.libgcc   0x0000b580       0x26 c:/winavr-20100110/bin/../lib/gcc/avr/4.3.3/avrxmega7\libgcc.a(_divmodhi4.o)
+                0x0000b580                __divmodhi4
+                0x0000b580                _div
+ .text.libgcc   0x0000b5a6       0x44 c:/winavr-20100110/bin/../lib/gcc/avr/4.3.3/avrxmega7\libgcc.a(_udivmodsi4.o)
+                0x0000b5a6                __udivmodsi4
+ .text.libgcc   0x0000b5ea       0x36 c:/winavr-20100110/bin/../lib/gcc/avr/4.3.3/avrxmega7\libgcc.a(_divmodsi4.o)
+                0x0000b5ea                __divmodsi4
+ .text.libgcc   0x0000b620       0x38 c:/winavr-20100110/bin/../lib/gcc/avr/4.3.3/avrxmega7\libgcc.a(_prologue.o)
+                0x0000b620                __prologue_saves__
+ .text.libgcc   0x0000b658       0x36 c:/winavr-20100110/bin/../lib/gcc/avr/4.3.3/avrxmega7\libgcc.a(_epilogue.o)
+                0x0000b658                __epilogue_restores__
+ .text.libgcc   0x0000b68e        0x0 c:/winavr-20100110/bin/../lib/gcc/avr/4.3.3/avrxmega7\libgcc.a(_exit.o)
+ .text.libgcc   0x0000b68e        0xc c:/winavr-20100110/bin/../lib/gcc/avr/4.3.3/avrxmega7\libgcc.a(_tablejump.o)
+                0x0000b692                __tablejump__
+                0x0000b68e                __tablejump2__
+ .text.libgcc   0x0000b69a        0x0 c:/winavr-20100110/bin/../lib/gcc/avr/4.3.3/avrxmega7\libgcc.a(_clear_bss.o)
  .text.avr-libc
-                0x0000b7a8      0x20a c:/winavr-20100110/bin/../lib/gcc/avr/4.3.3/../../../../avr/lib/avrxmega7\libc.a(malloc.o)
-                0x0000b7a8                malloc
-                0x0000b902                free
+                0x0000b69a      0x20a c:/winavr-20100110/bin/../lib/gcc/avr/4.3.3/../../../../avr/lib/avrxmega7\libc.a(malloc.o)
+                0x0000b69a                malloc
+                0x0000b7f4                free
  .text.avr-libc
-                0x0000b9b2      0x22c c:/winavr-20100110/bin/../lib/gcc/avr/4.3.3/../../../../avr/lib/avrxmega7\libc.a(strtoul.o)
-                0x0000b9b2                strtoul
+                0x0000b8a4      0x22c c:/winavr-20100110/bin/../lib/gcc/avr/4.3.3/../../../../avr/lib/avrxmega7\libc.a(strtoul.o)
+                0x0000b8a4                strtoul
  .text.avr-libc
-                0x0000bbde       0x10 c:/winavr-20100110/bin/../lib/gcc/avr/4.3.3/../../../../avr/lib/avrxmega7\libc.a(isspace.o)
-                0x0000bbde                isspace
+                0x0000bad0       0x10 c:/winavr-20100110/bin/../lib/gcc/avr/4.3.3/../../../../avr/lib/avrxmega7\libc.a(isspace.o)
+                0x0000bad0                isspace
  .text.avr-libc
-                0x0000bbee       0x56 c:/winavr-20100110/bin/../lib/gcc/avr/4.3.3/../../../../avr/lib/avrxmega7\libc.a(sprintf.o)
-                0x0000bbee                sprintf
+                0x0000bae0       0x56 c:/winavr-20100110/bin/../lib/gcc/avr/4.3.3/../../../../avr/lib/avrxmega7\libc.a(sprintf.o)
+                0x0000bae0                sprintf
  .text.avr-libc
-                0x0000bc44      0x400 c:/winavr-20100110/bin/../lib/gcc/avr/4.3.3/../../../../avr/lib/avrxmega7\libc.a(vfprintf_std.o)
-                0x0000bc44                vfprintf
+                0x0000bb36      0x400 c:/winavr-20100110/bin/../lib/gcc/avr/4.3.3/../../../../avr/lib/avrxmega7\libc.a(vfprintf_std.o)
+                0x0000bb36                vfprintf
  .text.avr-libc
-                0x0000c044       0x20 c:/winavr-20100110/bin/../lib/gcc/avr/4.3.3/../../../../avr/lib/avrxmega7\libc.a(eerd_byte_atxmega128a1.o)
-                0x0000c044                __eerd_byte_x128a1
-                0x0000c04c                eeprom_mapen
+                0x0000bf36       0x20 c:/winavr-20100110/bin/../lib/gcc/avr/4.3.3/../../../../avr/lib/avrxmega7\libc.a(eerd_byte_atxmega128a1.o)
+                0x0000bf36                __eerd_byte_x128a1
+                0x0000bf3e                eeprom_mapen
  .text.avr-libc
-                0x0000c064       0x46 c:/winavr-20100110/bin/../lib/gcc/avr/4.3.3/../../../../avr/lib/avrxmega7\libc.a(eewr_byte_atxmega128a1.o)
-                0x0000c064                __eewr_byte_x128a1
-                0x0000c066                __eewr_r18_x128a1
+                0x0000bf56       0x46 c:/winavr-20100110/bin/../lib/gcc/avr/4.3.3/../../../../avr/lib/avrxmega7\libc.a(eewr_byte_atxmega128a1.o)
+                0x0000bf56                __eewr_byte_x128a1
+                0x0000bf58                __eewr_r18_x128a1
  .text.avr-libc
-                0x0000c0aa        0x6 c:/winavr-20100110/bin/../lib/gcc/avr/4.3.3/../../../../avr/lib/avrxmega7\libc.a(cty_isfalse.o)
-                0x0000c0ae                __ctype_istrue
-                0x0000c0aa                __ctype_isfalse
+                0x0000bf9c        0x6 c:/winavr-20100110/bin/../lib/gcc/avr/4.3.3/../../../../avr/lib/avrxmega7\libc.a(cty_isfalse.o)
+                0x0000bfa0                __ctype_istrue
+                0x0000bf9c                __ctype_isfalse
  .text.avr-libc
-                0x0000c0b0       0x16 c:/winavr-20100110/bin/../lib/gcc/avr/4.3.3/../../../../avr/lib/avrxmega7\libc.a(strnlen_P.o)
-                0x0000c0b0                strnlen_P
+                0x0000bfa2       0x16 c:/winavr-20100110/bin/../lib/gcc/avr/4.3.3/../../../../avr/lib/avrxmega7\libc.a(strnlen_P.o)
+                0x0000bfa2                strnlen_P
  .text.avr-libc
-                0x0000c0c6       0x16 c:/winavr-20100110/bin/../lib/gcc/avr/4.3.3/../../../../avr/lib/avrxmega7\libc.a(strnlen.o)
-                0x0000c0c6                strnlen
+                0x0000bfb8       0x16 c:/winavr-20100110/bin/../lib/gcc/avr/4.3.3/../../../../avr/lib/avrxmega7\libc.a(strnlen.o)
+                0x0000bfb8                strnlen
  .text.avr-libc
-                0x0000c0dc       0x58 c:/winavr-20100110/bin/../lib/gcc/avr/4.3.3/../../../../avr/lib/avrxmega7\libc.a(fputc.o)
-                0x0000c0dc                fputc
+                0x0000bfce       0x58 c:/winavr-20100110/bin/../lib/gcc/avr/4.3.3/../../../../avr/lib/avrxmega7\libc.a(fputc.o)
+                0x0000bfce                fputc
  .text.avr-libc
-                0x0000c134       0xbc c:/winavr-20100110/bin/../lib/gcc/avr/4.3.3/../../../../avr/lib/avrxmega7\libc.a(ultoa_invert.o)
-                0x0000c134                __ultoa_invert
-                0x0000c1f0                . = ALIGN (0x2)
+                0x0000c026       0xbc c:/winavr-20100110/bin/../lib/gcc/avr/4.3.3/../../../../avr/lib/avrxmega7\libc.a(ultoa_invert.o)
+                0x0000c026                __ultoa_invert
+                0x0000c0e2                . = ALIGN (0x2)
  *(.fini9)
- .fini9         0x0000c1f0        0x0 c:/winavr-20100110/bin/../lib/gcc/avr/4.3.3/avrxmega7\libgcc.a(_exit.o)
-                0x0000c1f0                exit
-                0x0000c1f0                _exit
+ .fini9         0x0000c0e2        0x0 c:/winavr-20100110/bin/../lib/gcc/avr/4.3.3/avrxmega7\libgcc.a(_exit.o)
+                0x0000c0e2                exit
+                0x0000c0e2                _exit
  *(.fini9)
  *(.fini8)
  *(.fini8)
@@ -649,11 +649,11 @@ LOAD c:/winavr-20100110/bin/../lib/gcc/avr/4.3.3/avrxmega7\libgcc.a
  *(.fini1)
  *(.fini1)
  *(.fini0)
- .fini0         0x0000c1f0        0x4 c:/winavr-20100110/bin/../lib/gcc/avr/4.3.3/avrxmega7\libgcc.a(_exit.o)
+ .fini0         0x0000c0e2        0x4 c:/winavr-20100110/bin/../lib/gcc/avr/4.3.3/avrxmega7\libgcc.a(_exit.o)
  *(.fini0)
-                0x0000c1f4                _etext = .
+                0x0000c0e6                _etext = .
 
-.data           0x00802000      0x4e8 load address 0x0000c1f4
+.data           0x00802000      0x4e8 load address 0x0000c0e6
                 0x00802000                PROVIDE (__data_start, .)
  *(.data)
  .data          0x00802000        0x0 c:/winavr-20100110/bin/../lib/gcc/avr/4.3.3/../../../../avr/lib/avrxmega7/crtx128a1.o
@@ -822,8 +822,8 @@ LOAD c:/winavr-20100110/bin/../lib/gcc/avr/4.3.3/avrxmega7\libgcc.a
  COMMON         0x00802c19        0x2 c:/winavr-20100110/bin/../lib/gcc/avr/4.3.3/../../../../avr/lib/avrxmega7\libc.a(errno.o)
                 0x00802c19                errno
                 0x00802c1b                PROVIDE (__bss_end, .)
-                0x0000c1f4                __data_load_start = LOADADDR (.data)
-                0x0000c6dc                __data_load_end = (__data_load_start + SIZEOF (.data))
+                0x0000c0e6                __data_load_start = LOADADDR (.data)
+                0x0000c5ce                __data_load_end = (__data_load_start + SIZEOF (.data))
 
 .noinit         0x00802c1b        0x0
                 0x00802c1b                PROVIDE (__noinit_start, .)
@@ -933,18 +933,18 @@ LOAD c:/winavr-20100110/bin/../lib/gcc/avr/4.3.3/avrxmega7\libgcc.a
  .debug_pubnames
                 0x00000d9c       0xee eeprom_driver.o
 
-.debug_info     0x00000000     0x9bd2
+.debug_info     0x00000000     0x9be1
  *(.debug_info)
- .debug_info    0x00000000     0x2649 main.o
- .debug_info    0x00002649     0x2163 utils.o
- .debug_info    0x000047ac      0x488 uart.o
- .debug_info    0x00004c34      0x7c7 handler.o
- .debug_info    0x000053fb      0x713 twi.o
- .debug_info    0x00005b0e     0x23bb ff.o
- .debug_info    0x00007ec9      0x942 mmc.o
- .debug_info    0x0000880b      0x1f5 rtc.o
- .debug_info    0x00008a00      0xbfd timer.o
- .debug_info    0x000095fd      0x5d5 eeprom_driver.o
+ .debug_info    0x00000000     0x2658 main.o
+ .debug_info    0x00002658     0x2163 utils.o
+ .debug_info    0x000047bb      0x488 uart.o
+ .debug_info    0x00004c43      0x7c7 handler.o
+ .debug_info    0x0000540a      0x713 twi.o
+ .debug_info    0x00005b1d     0x23bb ff.o
+ .debug_info    0x00007ed8      0x942 mmc.o
+ .debug_info    0x0000881a      0x1f5 rtc.o
+ .debug_info    0x00008a0f      0xbfd timer.o
+ .debug_info    0x0000960c      0x5d5 eeprom_driver.o
  *(.gnu.linkonce.wi.*)
 
 .debug_abbrev   0x00000000     0x1621
@@ -960,18 +960,18 @@ LOAD c:/winavr-20100110/bin/../lib/gcc/avr/4.3.3/avrxmega7\libgcc.a
  .debug_abbrev  0x00001307      0x12a timer.o
  .debug_abbrev  0x00001431      0x1f0 eeprom_driver.o
 
-.debug_line     0x00000000     0x693f
+.debug_line     0x00000000     0x6947
  *(.debug_line)
- .debug_line    0x00000000     0x1c68 main.o
- .debug_line    0x00001c68     0x12a8 utils.o
- .debug_line    0x00002f10      0x3f4 uart.o
- .debug_line    0x00003304      0x1b7 handler.o
- .debug_line    0x000034bb      0x3f9 twi.o
- .debug_line    0x000038b4     0x2243 ff.o
- .debug_line    0x00005af7      0x853 mmc.o
- .debug_line    0x0000634a       0xcd rtc.o
- .debug_line    0x00006417      0x1b5 timer.o
- .debug_line    0x000065cc      0x373 eeprom_driver.o
+ .debug_line    0x00000000     0x1c70 main.o
+ .debug_line    0x00001c70     0x12a8 utils.o
+ .debug_line    0x00002f18      0x3f4 uart.o
+ .debug_line    0x0000330c      0x1b7 handler.o
+ .debug_line    0x000034c3      0x3f9 twi.o
+ .debug_line    0x000038bc     0x2243 ff.o
+ .debug_line    0x00005aff      0x853 mmc.o
+ .debug_line    0x00006352       0xcd rtc.o
+ .debug_line    0x0000641f      0x1b5 timer.o
+ .debug_line    0x000065d4      0x373 eeprom_driver.o
 
 .debug_frame    0x00000000      0xa80
  *(.debug_frame)
@@ -986,41 +986,41 @@ LOAD c:/winavr-20100110/bin/../lib/gcc/avr/4.3.3/avrxmega7\libgcc.a
  .debug_frame   0x00000950       0x80 timer.o
  .debug_frame   0x000009d0       0xb0 eeprom_driver.o
 
-.debug_str      0x00000000     0x220c
+.debug_str      0x00000000     0x220a
  *(.debug_str)
- .debug_str     0x00000000      0xd6d main.o
-                                0xe42 (size before relaxing)
- .debug_str     0x00000d6d      0x61e utils.o
-                                0xb7b (size before relaxing)
- .debug_str     0x0000138b      0x10d uart.o
-                                0x225 (size before relaxing)
- .debug_str     0x00001498       0xb2 handler.o
-                                0x3d0 (size before relaxing)
- .debug_str     0x0000154a      0x2a1 twi.o
-                                0x59d (size before relaxing)
- .debug_str     0x000017eb      0x32d ff.o
-                                0x656 (size before relaxing)
- .debug_str     0x00001b18      0x20b mmc.o
-                                0x435 (size before relaxing)
- .debug_str     0x00001d23       0x53 rtc.o
-                                0x121 (size before relaxing)
- .debug_str     0x00001d76       0x71 timer.o
-                                0x414 (size before relaxing)
- .debug_str     0x00001de7      0x425 eeprom_driver.o
-                                0x51f (size before relaxing)
+ .debug_str     0x00000000      0xd6b main.o
+                                0xe40 (size before relaxing)
+ .debug_str     0x00000d6b      0x61e utils.o
+                                0xb79 (size before relaxing)
+ .debug_str     0x00001389      0x10d uart.o
+                                0x223 (size before relaxing)
+ .debug_str     0x00001496       0xb2 handler.o
+                                0x3ce (size before relaxing)
+ .debug_str     0x00001548      0x2a1 twi.o
+                                0x59b (size before relaxing)
+ .debug_str     0x000017e9      0x32d ff.o
+                                0x654 (size before relaxing)
+ .debug_str     0x00001b16      0x20b mmc.o
+                                0x433 (size before relaxing)
+ .debug_str     0x00001d21       0x53 rtc.o
+                                0x11f (size before relaxing)
+ .debug_str     0x00001d74       0x71 timer.o
+                                0x412 (size before relaxing)
+ .debug_str     0x00001de5      0x425 eeprom_driver.o
+                                0x51d (size before relaxing)
 
-.debug_loc      0x00000000     0x7c5c
+.debug_loc      0x00000000     0x7c34
  *(.debug_loc)
- .debug_loc     0x00000000     0x18ac main.o
- .debug_loc     0x000018ac      0xdf6 utils.o
- .debug_loc     0x000026a2      0x281 uart.o
- .debug_loc     0x00002923       0x7f handler.o
- .debug_loc     0x000029a2      0x377 twi.o
- .debug_loc     0x00002d19     0x4682 ff.o
- .debug_loc     0x0000739b      0x62c mmc.o
- .debug_loc     0x000079c7       0x40 rtc.o
- .debug_loc     0x00007a07       0x6a timer.o
- .debug_loc     0x00007a71      0x1eb eeprom_driver.o
+ .debug_loc     0x00000000     0x1884 main.o
+ .debug_loc     0x00001884      0xdf6 utils.o
+ .debug_loc     0x0000267a      0x281 uart.o
+ .debug_loc     0x000028fb       0x7f handler.o
+ .debug_loc     0x0000297a      0x377 twi.o
+ .debug_loc     0x00002cf1     0x4682 ff.o
+ .debug_loc     0x00007373      0x62c mmc.o
+ .debug_loc     0x0000799f       0x40 rtc.o
+ .debug_loc     0x000079df       0x6a timer.o
+ .debug_loc     0x00007a49      0x1eb eeprom_driver.o
 
 .debug_macinfo
  *(.debug_macinfo)

@@ -48,6 +48,7 @@ uint16_t functionY_rate = FUNCTION_RATE;
 
 uint8_t  laserPattern[125];
 int8_t   gain_x, gain_y, bias_x, bias_y;
+int16_t  X_val, Y_val;
 int16_t  X_pos_index, Y_pos_index;
 uint16_t trigger_rate = 200;
 
@@ -185,6 +186,7 @@ int main(void) {
     bias_x = bias_y = 0;
     gain_x = gain_y = 0;
     x_mode = y_mode = 0;
+	X_val = Y_val = 0;
     gs_value = 1;
     row_compress = 0;
     ident_compress = 0; // enable this to substitute simpler panael pattern for uniform pattern patches
@@ -381,13 +383,18 @@ void handle_message_length_1(uint8_t *msg_buffer) {
             Reg_Handler(increment_index_y, UPDATE_RATE, 3, 0); // the countdown is fast until the setting of the next rate
                                                                 //by the Update_display interupt.
 			if (default_func_x)
+
 				Reg_Handler(update_funcCnt_x, functionX_rate, 4, 0);
-			else
+			else{
+				update_funcCnt_x();//add this because the function cnt is updated without delay
 				Reg_Handler(update_funcCnt_x, functionX_rate, 4, 1);
+				}
 			if (default_func_y)
 				Reg_Handler(update_funcCnt_y, functionY_rate, 5, 0); 
-			else
+			else{
+				update_funcCnt_y();//add this because the function cnt is updated without delay
 				Reg_Handler(update_funcCnt_y, functionY_rate, 5, 1); 			
+				}
 			break;
             
         case 0x30: //stop display
@@ -960,7 +967,6 @@ void Update_display(void) {
     int16_t Y_rate = 0;
     int16_t X_ADC1, Y_ADC1; 
     int16_t temp_ADC_val;
-	int16_t  X_val, Y_val;
 
     //there are five modes 0 - OL, 1 - CL, 2 - CL w Bias, 3 - POS mode with ch5, 4 - POS mode from pos func 5 - function DBG mode
     

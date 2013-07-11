@@ -48,7 +48,6 @@ uint16_t functionY_rate = FUNCTION_RATE;
 
 uint8_t  laserPattern[125];
 int8_t   gain_x, gain_y, bias_x, bias_y;
-int16_t  X_val, Y_val;
 int16_t  X_pos_index, Y_pos_index;
 uint16_t trigger_rate = 200;
 
@@ -186,7 +185,6 @@ int main(void) {
     bias_x = bias_y = 0;
     gain_x = gain_y = 0;
     x_mode = y_mode = 0;
-	X_val = Y_val = 0;
     gs_value = 1;
     row_compress = 0;
     ident_compress = 0; // enable this to substitute simpler panael pattern for uniform pattern patches
@@ -383,12 +381,12 @@ void handle_message_length_1(uint8_t *msg_buffer) {
             Reg_Handler(increment_index_y, UPDATE_RATE, 3, 0); // the countdown is fast until the setting of the next rate
                                                                 //by the Update_display interupt.
 			if (default_func_x)
-
 				Reg_Handler(update_funcCnt_x, functionX_rate, 4, 0);
 			else{
 				update_funcCnt_x();//add this because the function cnt is updated without delay
 				Reg_Handler(update_funcCnt_x, functionX_rate, 4, 1);
 				}
+				
 			if (default_func_y)
 				Reg_Handler(update_funcCnt_y, functionY_rate, 5, 0); 
 			else{
@@ -424,6 +422,7 @@ void handle_message_length_1(uint8_t *msg_buffer) {
 				Reg_Handler(update_funcCnt_x, functionX_rate, 4, 0);
 			else
 				Reg_Handler(update_funcCnt_x, functionX_rate, 4, 1);
+				
 			if (default_func_y)
 				Reg_Handler(update_funcCnt_y, functionY_rate, 5, 0); 
 			else
@@ -535,7 +534,7 @@ void handle_message_length_1(uint8_t *msg_buffer) {
 			xprintf(PSTR("Enabled Int3 external trigger mode is on!\n"));
 			break;
 			
-		case 0x24: //disable int3 external trigger mode
+		case 0x24: //disable Int3 external trigger mode
 			PORTK.INT0MASK = 0x00;      //Int3 is used as source for port interrupt 0
 			xprintf(PSTR("Disabled Int3 external trigger mode!\n"));
 			break;		
@@ -824,8 +823,13 @@ void fetch_display_frame(uint16_t f_num, uint16_t Xindex, uint16_t Yindex){
     uint8_t sreg = SREG;
 	uint8_t block_per_frame;
 	uint8_t tempVal, bitIndex, arrayIndex;
-    
-    digitalWrite(1, HIGH); // set line high at start of frame write
+	
+	digitalWrite(1, HIGH); // set line high at start of frame write			
+	if (display_flag > 1){      //if flag gets bigger than 1 -> frame skipped
+			ledToggle(1);    //toggle LED 1
+	}
+				
+	display_flag = 0;  //clear the display flag
     len = num_panels * bytes_per_panel_frame;
 	
 	if (len%512 != 0)
@@ -843,11 +847,7 @@ void fetch_display_frame(uint16_t f_num, uint16_t Xindex, uint16_t Yindex){
         res = f_read(&file1, frameBuff, len, &cnt);
         if ((res == FR_OK) && (cnt == len)) {	
 		
-            if (display_flag > 1){      //if flag gets bigger than 1 -> frame skipped
-                ledToggle(1);    //toggle LED 1
-            }
-            
-            display_flag = 0;  //clear the display flag
+
             buff_index = 0;
             
             for (panel_index = 1; panel_index <= num_panels; panel_index++){
@@ -965,8 +965,10 @@ void fetch_display_frame(uint16_t f_num, uint16_t Xindex, uint16_t Yindex){
 void Update_display(void) {
     int16_t X_rate = 0;
     int16_t Y_rate = 0;
-    int16_t X_ADC1, Y_ADC1; 
+    int16_t X_ADC1, Y_ADC1, X_ADC2, Y_ADC2;
     int16_t temp_ADC_val;
+	int32_t temp_index_x, temp_index_y;	
+	int16_t  X_val, Y_val;
 
     //there are five modes 0 - OL, 1 - CL, 2 - CL w Bias, 3 - POS mode with ch5, 4 - POS mode from pos func 5 - function DBG mode
     
@@ -994,13 +996,26 @@ void Update_display(void) {
             //add in the bias to CL mode on ch X
             X_rate = (int16_t)((int32_t)(X_val*gain_x)/10 + 2*function_X[func_read_index_x] + 5*bias_x)/2;
             break;
-        case 3: 
-            break;
+        case 3: // POS mode, use CH2 to set the frame position (pos ctrl, not vel ctrl)
+	        X_ADC2 = analogRead(2);  //X_ADC2 ranges from 0-4095 (12bit ADC) when input 0-10V
+
+			if (X_ADC2>resolution_x) {X_ADC2 = resolution_x;}
+			
+			//calculate the index_x                                               
+			temp_index_x = ((int32_t)X_ADC2 * x_num * 2 + resolution_x) / ((int32_t) resolution_x * 2) - 1;
+				
+            if (temp_index_x >= x_num)  {temp_index_x = x_num - 1;} //check if too big
+            if (temp_index_x <= 0)  {temp_index_x = 0;} //or too small
+			index_x = temp_index_x;
+			
+            frame_num = index_y*x_num + index_x;
+            X_rate = 0;			
+			break;
+			
 		case 4:
-            break;
 		case 5:
-            X_rate = 0;
-            break;
+			X_rate = 0;
+			break;			
     }
 
 	
@@ -1030,13 +1045,25 @@ void Update_display(void) {
             //add in the bias to CL mode on ch Y
             Y_rate = (int16_t)((int32_t)(Y_val*gain_y)/10 + 2*function_Y[func_read_index_y] + 5*bias_y)/2; //Y_val can go as high as 4095
             break;
-		case 3:
+        case 3: // POS mode, use CH3 to set the frame position (pos ctrl, not vel ctrl)
+            Y_ADC2 = analogRead(3);   //Y_ADC2 ranges from 0-4095 when input 0-10V
+			
+			if (Y_ADC2>resolution_y) {Y_ADC2 = resolution_y;}
+			
+			//calculate the index_x                                               
+			temp_index_y = ((int32_t)Y_ADC2 * y_num * 2 + resolution_y) / ((int32_t) resolution_y * 2) - 1;
+			
+            if (temp_index_y >= y_num)  {temp_index_y = y_num - 1;} //check if too big
+            if (temp_index_y <= 0)  {temp_index_y = 0;} //or too small
+			index_y = temp_index_y;
+            frame_num = index_y*x_num + index_x;
+            Y_rate = 0;			
             break;
+			
 		case 4:
-            break;
-        case 5:  // this is the function gen DBG mode - don't run y, set rate to zero
-            Y_rate = 0;
-            break;
+		case 5:
+			Y_rate = 0;
+			break;
             //do something with errors here for default case
     }
     
@@ -1073,7 +1100,7 @@ void increment_index_x(void) {
     
     index_x++;
     if (index_x >= x_num)
-    {index_x = 0;}
+		index_x = 0;
     
     
     frame_num = index_y*x_num + index_x;
@@ -1336,8 +1363,6 @@ void set_pos_func(uint8_t func_channel, uint8_t func_id) {
     //uint8_t func_name_y[100];
     uint8_t res, func_name_len;
     uint8_t posFuncBuff[512];
-	uint16_t loadXBuffer = FUNCTION_LENGTH;
-	uint16_t loadYBuffer = FUNCTION_LENGTH;
     
     
     if (func_id < 10)
@@ -1385,15 +1410,13 @@ void set_pos_func(uint8_t func_channel, uint8_t func_id) {
                         xputs(PSTR("Error f_read set_pos_func X\n"));
             } else 
                     xputs(PSTR("Error f_open in set_pos_func X.\n"));
-				
-			last_load_x = funcSize_x % loadXBuffer;
-			
-			if (last_load_x == 0){
-				num_buffer_load_x = funcSize_x / loadXBuffer;		
-			}
-			else{
-				num_buffer_load_x = funcSize_x / loadXBuffer + 1;
-			}					
+					
+	
+			last_load_x = funcSize_x % FUNCTION_LENGTH;
+			if (last_load_x == 0)
+				num_buffer_load_x = funcSize_x / FUNCTION_LENGTH;
+			else
+				num_buffer_load_x = funcSize_x / FUNCTION_LENGTH + 1;
 			
 			if (quiet_mode_on == 0)
 			{
@@ -1436,20 +1459,21 @@ void set_pos_func(uint8_t func_channel, uint8_t func_id) {
                     //xprintf(PSTR("fun Y: %s\n function Y size: %lu bytes\n"),
                     //       func_name_y, funcSize_y);
                     
-                } else 
+                } else {
                         xputs(PSTR("Error f_read set_pos_func Y.\n"));
-            } else
+                }
+            } else {
+                if (quiet_mode_on == 0)
                     xputs(PSTR("Error f_open in set_pos_func Y.\n"));
+            }
 			
-			last_load_y = funcSize_y % loadYBuffer;
-			
-			if (last_load_y == 0){
-				num_buffer_load_y = funcSize_y / loadYBuffer;		
-			}
-			else{
-				num_buffer_load_y = funcSize_y / loadYBuffer + 1;
-			}
-			
+			last_load_y = funcSize_y % FUNCTION_LENGTH;
+			if (last_load_y == 0)
+				num_buffer_load_y = funcSize_y / FUNCTION_LENGTH;
+			else
+				num_buffer_load_y = funcSize_y / FUNCTION_LENGTH + 1;
+		
+	
 			if (quiet_mode_on == 0){
 				xprintf(PSTR("funcSize_y = %u\n"), funcSize_y);
 				xprintf(PSTR("last_load_y = %u \n"), last_load_y);
@@ -1522,22 +1546,23 @@ void set_vel_func(uint8_t func_channel, uint8_t func_id) {
                 } else {
                         xputs(PSTR("Error f_read in set_vel_func X.\n"));
                 }
-            } else 
+            } else {
                     xputs(PSTR("Error f_open in set_vel_func X.\n"));
+            }
+			
+			last_load_x = funcSize_x % FUNCTION_LENGTH;
+			
+			if(last_load_x == 0)
+					num_buffer_load_x = funcSize_x/FUNCTION_LENGTH;
+			else
+					num_buffer_load_x = funcSize_x / FUNCTION_LENGTH + 1;
+				
 			
 			if (quiet_mode_on == 0)
 			{
 				xprintf(PSTR("funcSize_x = %u\n"), funcSize_x);
-				last_load_x = funcSize_x % FUNCTION_LENGTH;
 				xprintf(PSTR("last_load_x = %u\n"), last_load_x);
-				if(!last_load_x){
-					num_buffer_load_x = funcSize_x/FUNCTION_LENGTH;
-					xprintf(PSTR("num_buffer_load_x = %u\n"), num_buffer_load_x);			
-				}
-				else{
-					num_buffer_load_x = funcSize_x / FUNCTION_LENGTH + 1;
-					xprintf(PSTR("num_buffer_load_x = %u\n"), num_buffer_load_x);
-				}
+				xprintf(PSTR("num_buffer_load_x = %u\n"), num_buffer_load_x);			
 			}
 			
 			default_func_x = 0;
@@ -1576,24 +1601,25 @@ void set_vel_func(uint8_t func_channel, uint8_t func_id) {
                     if (quiet_mode_on == 0)
                         xprintf(PSTR("Setting velocity function %u for Y\n"), func_id);
                     
-                } else
+                } else {
                         xputs(PSTR("Error f_read in set_vel_func Y.\n"));
-            } else
+                }
+            } else {
                     xputs(PSTR("Error f_open in set_vel_func Y.\n"));
-        
+            }
 			
+			last_load_y = funcSize_y % FUNCTION_LENGTH;
+			
+			if (last_load_y == 0)
+				num_buffer_load_y = funcSize_y / FUNCTION_LENGTH;		
+			else
+				num_buffer_load_y = funcSize_y / FUNCTION_LENGTH + 1;
+			
+		
 			if (quiet_mode_on == 0){
 				xprintf(PSTR("funcSize_y = %u\n"), funcSize_y);
-				last_load_y = funcSize_y % FUNCTION_LENGTH;
 				xprintf(PSTR("last_load_y = %u\n"), last_load_y);
-				if (last_load_y == 0){
-					num_buffer_load_y = funcSize_y / FUNCTION_LENGTH;
-					xprintf(PSTR("num_buffer_load_y = %u\n"), num_buffer_load_y);			
-				}
-				else{
-					num_buffer_load_y = funcSize_y / FUNCTION_LENGTH + 1;
-					xprintf(PSTR("num_buffer_load_y = %u\n"), num_buffer_load_y);
-				}
+				xprintf(PSTR("num_buffer_load_y = %u\n"), num_buffer_load_y);			
 			}
 			
 			default_func_y = 0;
@@ -1614,8 +1640,7 @@ void set_vel_func(uint8_t func_channel, uint8_t func_id) {
 void update_funcCnt_x(void) {
     int16_t X_dac_val;
     int16_t temp_ADC_val;
-	int32_t temp_index_x;
-	uint16_t X_ADC2;
+
 
 	
 	if (!func_buffer_size_x){
@@ -1632,19 +1657,9 @@ void update_funcCnt_x(void) {
 	
 	switch(x_mode){
 	
+		case 1:
+		case 2:
 		case 3:
-	        X_ADC2 = analogRead(2);  //X_ADC2 ranges from 0-4095 (12bit ADC) when input 0-10V
-
-			if (X_ADC2>resolution_x) {X_ADC2 = resolution_x;}
-			
-			//calculate the index_x                                               
-			temp_index_x = ((int32_t)X_ADC2 * x_num * 2 + resolution_x) / ((int32_t) resolution_x * 2) - 1;
-				
-            if (temp_index_x >= x_num)  {temp_index_x = x_num - 1;} //check if too big
-            if (temp_index_x <= 0)  {temp_index_x = 0;} //or too small
-			index_x = temp_index_x;
-			
-            frame_num = index_y*x_num + index_x;
 			break;
 			
 		case 4:
@@ -1699,11 +1714,11 @@ void fetch_update_funcX(uint8_t fReset, uint8_t num_of_load_x) {
 		res = f_read(&file2, tempBuff, loadXBufferSize, &cnt);
 		if (!((res == FR_OK) && (cnt == loadXBufferSize))) {
 			xprintf(PSTR("res =  %u\n"), res);
-			xputs(PSTR("Error in f_read in in update_funcCnt_x\n"));
+			xputs(PSTR("Error in f_read in in fetch_update_funcX\n"));
 		}
 		
 		for (j = 0; j< cnt; j+=2){
-			function_X[func_write_index_x] = (uint16_t)tempBuff[j] + tempBuff[j+1]*256 ; 		
+			function_X[func_write_index_x] = (uint16_t)tempBuff[j] + (uint16_t)tempBuff[j+1]*256 ; 		
 			func_write_index_x++;  
 			if (func_write_index_x >= BUFFER_LENGTH/2) //0-127
 				func_write_index_x = 0;
@@ -1714,15 +1729,13 @@ void fetch_update_funcX(uint8_t fReset, uint8_t num_of_load_x) {
             //xprintf(PSTR("func_write_index_x =  %u\n"), func_write_index_x);
 	} else {
 			xprintf(PSTR("res =  %u\n"), res);
-			xputs(PSTR("Error in f_lseek in update_funcCnt_x\n"));
+			xputs(PSTR("Error in f_lseek in fetch_update_funcX\n"));
 	}
 }
 
 void update_funcCnt_y(void) {
     int16_t Y_dac_val;
     int16_t temp_ADC_val;
-	int32_t temp_index_y;
-	uint16_t Y_ADC2;
 
 	
 	if (!func_buffer_size_y){
@@ -1736,19 +1749,10 @@ void update_funcCnt_y(void) {
 	func_buffer_size_y--;
     
 	switch(y_mode){
-	    case 3: // POS mode, use CH3 to set the frame position (pos ctrl, not vel ctrl)
-            Y_ADC2 = analogRead(3);   //Y_ADC2 ranges from 0-4095 when input 0-10V
-			
-			if (Y_ADC2>resolution_y) {Y_ADC2 = resolution_y;}
-			
-			//calculate the index_x                                               
-			temp_index_y = ((int32_t)Y_ADC2 * y_num * 2 + resolution_y) / ((int32_t) resolution_y * 2) - 1;
-			
-            if (temp_index_y >= y_num)  {temp_index_y = y_num - 1;} //check if too big
-            if (temp_index_y <= 0)  {temp_index_y = 0;} //or too small
-			index_y = temp_index_y;
-            frame_num = index_y*x_num + index_x;
-            break;
+		case 1:
+		case 2:
+		case 3:
+			break;
 			
         case 4:
             //only use temp_ADC_val as a temp variable, just not to create an additional one
@@ -1866,7 +1870,7 @@ void dump_mat(void) {
     
 }
 
-//external trigger mode for int2 to start playing pattern
+//external trigger mode for Int3 to start playing pattern
 
 ISR(PORTK_INT0_vect)
 {
@@ -1880,10 +1884,21 @@ Reg_Handler(Update_display, UPDATE_RATE, 1, 1);
 Reg_Handler(increment_index_x, UPDATE_RATE, 2, 0); //initilize the 2 and 3 priority interupts to a fast rate so that
 Reg_Handler(increment_index_y, UPDATE_RATE, 3, 0); // the countdown is fast until the setting of the next rate
 													//by the Update_display interupt.
-Reg_Handler(update_funcCnt_x, functionX_rate, 4, 1);
-Reg_Handler(update_funcCnt_y, functionY_rate, 5, 1); 
+if (default_func_x)
+	Reg_Handler(update_funcCnt_x, functionX_rate, 4, 0);
+else{
+	update_funcCnt_x();//add this because the function cnt is updated without delay
+	Reg_Handler(update_funcCnt_x, functionX_rate, 4, 1);
+	}
+	
+if (default_func_y)
+	Reg_Handler(update_funcCnt_y, functionY_rate, 5, 0); 
+else{
+	update_funcCnt_y();//add this because the function cnt is updated without delay
+	Reg_Handler(update_funcCnt_y, functionY_rate, 5, 1); 			
+	}
 			
 
-xputs(PSTR("INT3 catches a rising edge trigger!\n"));
+xputs(PSTR("Int3 catches a rising edge trigger!\n"));
 }
 

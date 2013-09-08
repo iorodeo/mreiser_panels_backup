@@ -17,13 +17,14 @@ unsigned char CurrentFrame;   //for GS frame
 
 unsigned char DisplayBuffer[8];
 unsigned char GS_Buffer[4][8];
-unsigned char PATTERNS[RAM_PAT_NUMS][8];
+unsigned char PATTERNS[RAM_PAT_NUMS*8];
 unsigned char currentnum;
 unsigned char deviceAddr;
 
 
 unsigned char Map_flag = 0;   // = 0; debug only!
 unsigned char Gray_Scale = 1;
+unsigned char Row_Compression = 0;
 //unsigned char Zero_map = 0;
 //unsigned char One_map = 1;
 unsigned char start_up = 1;
@@ -33,7 +34,6 @@ void i2cSlaveReceiveService(u08 receiveDataLength, u08* receiveData);
 
 int main(void)
 {	
-	int i;
 	int j;
 	
 	deviceAddr = eeprom_read_byte(Panel_ID);
@@ -59,7 +59,7 @@ int main(void)
 	Gray_Scale = 1;				
 	
 	Handler_Init();					/* setup handlers */
-	Reg_Handler(UpdateDisplay,2,1);	//runs at about 1/(4*256*8*(1/16E6)) = 2.44 Khz
+	Reg_Handler(UpdateDisplay,2,1);	//runs at about 1/(2*256*8*(1/16E6)) = 3.9 Khz
 
 	
 	DisplayNum();
@@ -73,10 +73,8 @@ int main(void)
 	start_up = 0;	
 	
 	//to test for maximum number of patterns that can be held in PATTERNS - zero all of them
-	for (j = 0; j < RAM_PAT_NUMS; j++){
-		for (i=0; i< 8; i++){
-		PATTERNS[j][i] = 0x00;
-		}
+	for (j = 0; j < RAM_PAT_NUMS*8; j++){
+		PATTERNS[j] = 0x00;
 	}
 	
 	
@@ -87,12 +85,13 @@ int main(void)
 
 void i2cSlaveReceiveService(u08 receiveDataLength, u08* receiveData)
 {	
-	u08 EEpat_num, frame_num;
+	u08 EEpat_num;
+	uint16_t frame_num;
 		
 	//use the length of the received packet to determine action
 	switch(receiveDataLength) {
 	case 1: // if length 1, then this is 1 byte - need to stretch to 8 bytes
-		LoadPattern_1byte(*receiveData);
+		LoadPattern1(*receiveData);
 		break; 		
 	case 2:   
 	//a reset is 0x00, 0x01; display ID is: 0x00 0x02 Update ID is 0xFF, New Address
@@ -108,10 +107,50 @@ void i2cSlaveReceiveService(u08 receiveDataLength, u08* receiveData)
 			break;
 		
 		case 0xF0:
+		case 0xF1:
+		case 0xF2:
+		case 0xF3:
+		case 0xF4:
 			// just load that pattern from PATTERNS
-			LoadPattern(PATTERNS[*(receiveData+1)]);
-			break; 
+			*(uint8_t *)&frame_num = *(receiveData+1);  //reverse the high byte and low byte when tranfering
+			*((uint8_t *)&frame_num + 1) = *(receiveData) & 0x0F; //reverse it back after receiving
+			if (Row_Compression == 1){
 			
+				switch(Gray_Scale) {
+				case 1: 
+					LoadPattern1(PATTERNS[frame_num]);
+					break;
+					
+				case 3:
+					LoadPattern3(&PATTERNS[frame_num*3]);
+					break; 
+					
+				case 4:
+					LoadPattern4(&PATTERNS[frame_num*4]);
+					break; 
+				}
+			}
+			else{
+				switch(Gray_Scale) {
+				case 1: 
+					LoadPattern8(&PATTERNS[frame_num*8]);
+					break;
+		
+				case 2:
+					LoadPattern16(&PATTERNS[frame_num*16]);
+					break; 
+					
+				case 3:
+					LoadPattern24(&PATTERNS[frame_num*24]);
+					break; 
+					
+				case 4:
+					LoadPattern32(&PATTERNS[frame_num*32]);
+					break; 
+				}
+			
+			}
+			break;
 		case 0xFE:
 		    DisplayBusNum(*(receiveData+1));
 			break;
@@ -139,34 +178,93 @@ void i2cSlaveReceiveService(u08 receiveDataLength, u08* receiveData)
 		break;
 	
 	case 3: // if length 3, then this is a compressed g_scale pattern need to stretch to 24 bytes
-		LoadPattern_3byte(receiveData);
-		Gray_Scale = 7;     // this is a 7 level pattern - so Gray_Scale is 7
+		LoadPattern3(receiveData);
+		Gray_Scale = 3;     // this is a 8 level pattern - so Gray_Scale is 3
 		break; 
 		
-	case 4: // if length 4, then this is a compressed g_scale pattern need to stretch to 32 bytes
-        LoadPattern_4byte(receiveData);
-        Gray_Scale = 15;
-        break;
 	
-	case 8: LoadPattern(receiveData);	//stream in pattern		
+		
+	case 4: // if length 4, then this is a compressed g_scale pattern need to stretch to 32 bytes
+        LoadPattern4(receiveData);
+        Gray_Scale = 4;
+        break;
+		
+	case 5: // save pattern data for gs = 1 rc = 1
+		//the data format is [5, data, f_num_HB, f_num_LB , x, x]
+		*(uint8_t *)&frame_num =*(receiveData+1);
+		*((uint8_t *)&frame_num + 1) = *(receiveData+2);
+		StorePattern1(frame_num, receiveData);
+		Gray_Scale = 1;     
+		Row_Compression = 1;
+		break; 
+
+	case 6: // save pattern data for gs = 3 rc = 1
+		//the data format is [6, data1, data2, data 3, f_num_HB, f_num_LB , x]
+		*(uint8_t *)&frame_num =*(receiveData+3);
+		*((uint8_t *)&frame_num + 1) = *(receiveData+4);
+		//frame_num = (uint16_t)receiveData[3] + receiveData[4]*256;
+		StorePattern3(frame_num, receiveData);
+		Gray_Scale = 3;     
+		Row_Compression = 1;
+		break; 
+		
+	case 7: // save pattern data for gs = 4 rc = 1
+		//the data format is [7, data1, data2, data 3, data4, f_num_HB, f_num_LB , x]
+		*(uint8_t *)&frame_num =*(receiveData+4);
+		*((uint8_t *)&frame_num + 1) = *(receiveData+5);
+		StorePattern4(frame_num, receiveData);
+		Gray_Scale = 4;     
+		Row_Compression = 1;
+		break; 		
+		
+	case 8: LoadPattern8(receiveData);	//stream in pattern		
 		//Gray_Scale = 1;  , This is now set in LoadPattern.
 		break;	
 	
-	case 9:	StorePattern(*(receiveData+8), receiveData);	
+	case 10:	// save pattern data for gs = 1 rc = 0
+		*(uint8_t *)&frame_num =*(receiveData+8);
+		*((uint8_t *)&frame_num + 1) = *(receiveData+9);
+		StorePattern8(frame_num, receiveData);
+		Gray_Scale = 1; 
+		Row_Compression = 0;	
 		break;		
 		
 			
 	case 16: LoadPattern16(receiveData);	//stream in pattern		
-		Gray_Scale = 3;     // this is a 2 byte pattern - so Gray_Scale is 3
-		break;	
+		Gray_Scale = 2;     // this is a 2 byte pattern - so Gray_Scale is 2
+		break;
+
+	case 18:// save pattern data for gs = 2 rc = 0
+		*(uint8_t *)&frame_num =*(receiveData+16);
+		*((uint8_t *)&frame_num + 1) = *(receiveData+17);
+		StorePattern16(frame_num, receiveData);
+		Gray_Scale = 2; 
+		Row_Compression = 0;	
+		break;		
 		
 	case 24: LoadPattern24(receiveData);	//stream in pattern		
-		Gray_Scale = 7;     // this is a 7 level pattern - so Gray_Scale is 7
+		Gray_Scale = 3;     // this is a 8 level pattern - so Gray_Scale is 3
 		break;	
+		
+	case 26:	// save pattern data for gs = 3 rc = 0
+		*(uint8_t *)&frame_num =*(receiveData+24);
+		*((uint8_t *)&frame_num + 1) = *(receiveData+25);
+		StorePattern24(frame_num, receiveData);
+		Gray_Scale = 3; 
+		Row_Compression = 0;	
+		break;			
 
   	case 32: LoadPattern32(receiveData);	//stream in pattern
-		Gray_Scale = 15;     // this is a 4 byte pattern - so Gray_Scale is 15
-		break;	
+		Gray_Scale = 4;     // this is a 4 byte pattern - so Gray_Scale is 4
+		break;
+
+	case 34:	// save pattern data for gs = 4 rc = 0
+		*(uint8_t *)&frame_num =*(receiveData+32);
+		*((uint8_t *)&frame_num + 1) = *(receiveData+33);
+		StorePattern32(frame_num, receiveData);
+		Gray_Scale = 4; 
+		Row_Compression = 0;	
+		break;			
 		
 	default:
 		LoadPatternEEP(SYMBOLS[3]);   //third dot means wierd packet size received
@@ -191,7 +289,8 @@ void UpdateDisplay(void)
 	if (Gray_Scale == 1) {
 		LED_DATA_PORT_05 = MASK_05 & DisplayBuffer[CurrentCol];
 		LED_DATA_PORT_67 |= (MASK_67 & DisplayBuffer[CurrentCol]) >> 6;
-	} else if (Gray_Scale == 3) {
+		
+	} else if (Gray_Scale == 2) {
 	
 		switch(CurrentFrame) {
 			case 0:
@@ -211,8 +310,12 @@ void UpdateDisplay(void)
 				
 		LED_DATA_PORT_05 = MASK_05 & temp_frame;
 		LED_DATA_PORT_67 |= (MASK_67 & temp_frame) >> 6;
+		if (CurrentCol == 0) {
+			if(!(++CurrentFrame < 3)) 
+				CurrentFrame = 0;
+		}	
 
-	} else if (Gray_Scale == 7) {
+	} else if (Gray_Scale == 3) {
 
 		switch(CurrentFrame) {
 				
@@ -243,6 +346,10 @@ void UpdateDisplay(void)
 
 		LED_DATA_PORT_05 = MASK_05 & temp_frame;
 		LED_DATA_PORT_67 |= (MASK_67 & temp_frame) >> 6;
+		if (CurrentCol == 0) {
+			if(!(++CurrentFrame < 7)) 
+				CurrentFrame = 0;
+	}	
 	} else {
 
 		switch(CurrentFrame) {
@@ -298,12 +405,13 @@ void UpdateDisplay(void)
 
 		LED_DATA_PORT_05 = MASK_05 & temp_frame;
 		LED_DATA_PORT_67 |= (MASK_67 & temp_frame) >> 6;
+		if (CurrentCol == 0) {
+			if(!(++CurrentFrame < 15)) 
+				CurrentFrame = 0;
+	}	
 	}
 
-	if (CurrentCol == 0) {
-		if(!(++CurrentFrame < Gray_Scale)) 
-			CurrentFrame = 0;
-	}	
+
 	CurrentCol = (CurrentCol + 1) & 0x7;
 } 
 
@@ -314,7 +422,7 @@ void DisplayChar(unsigned char c,unsigned char col)
 }
 
 
-void LoadPattern_1byte(unsigned char pattern_byte)
+void LoadPattern1(unsigned char pattern_byte)
 {
 	
 	//should be done as above - but below is apparently 4 times faster!!!
@@ -330,7 +438,7 @@ void LoadPattern_1byte(unsigned char pattern_byte)
 	Gray_Scale = 1;
 }
 
-void LoadPattern_3byte(unsigned char* pattern)
+void LoadPattern3(unsigned char* pattern)
 {
 	
 	//should be done as above - but below is apparently 4 times faster!!!
@@ -362,7 +470,7 @@ void LoadPattern_3byte(unsigned char* pattern)
 	if (*(pattern + 2) & (1<<7) ) GS_Buffer[2][7] = 0xff; else GS_Buffer[2][7] = 0x00;
 }
 
-void LoadPattern_4byte(unsigned char* pattern)
+void LoadPattern4(unsigned char* pattern)
 {
 
 	if (*(pattern) & (1<<0) ) GS_Buffer[0][0] = 0xff; else GS_Buffer[0][0] = 0x00;
@@ -403,7 +511,7 @@ void LoadPattern_4byte(unsigned char* pattern)
 	if (*(pattern + 3) & (1<<7) ) GS_Buffer[3][7] = 0xff; else GS_Buffer[3][7] = 0x00;
 }
 
-void LoadPattern(unsigned char* pattern)
+void LoadPattern8(unsigned char* pattern)
 {
 
 		DisplayBuffer[0] = (*(pattern + 0));
@@ -521,16 +629,121 @@ void LoadPatternEEP(unsigned char *pattern)
 	DisplayBuffer[7] = eeprom_rb((uint8_t*)(pattern + 7));
 }
 
-void StorePattern(unsigned char patternNumber, unsigned char *pattern)
+void StorePattern1(uint16_t frameNumber, unsigned char *pattern)
 {	
-	PATTERNS[patternNumber][0] = (*(pattern + 0));
-	PATTERNS[patternNumber][1] = (*(pattern + 1));
-	PATTERNS[patternNumber][2] = (*(pattern + 2));
-	PATTERNS[patternNumber][3] = (*(pattern + 3));
-	PATTERNS[patternNumber][4] = (*(pattern + 4));
-	PATTERNS[patternNumber][5] = (*(pattern + 5));
-	PATTERNS[patternNumber][6] = (*(pattern + 6));
-	PATTERNS[patternNumber][7] = (*(pattern + 7));
+	PATTERNS[frameNumber] = *(pattern + 0);
+}
+
+void StorePattern3(uint16_t frameNumber, unsigned char *pattern)
+{	
+	PATTERNS[frameNumber*3] = *(pattern + 0);
+	PATTERNS[frameNumber*3+1] = *(pattern + 1);
+	PATTERNS[frameNumber*3+2] = *(pattern + 2);
+}
+
+void StorePattern4(uint16_t frameNumber, unsigned char *pattern)
+{	
+	PATTERNS[frameNumber*4] = *(pattern + 0);
+	PATTERNS[frameNumber*4+1] = *(pattern + 1);
+	PATTERNS[frameNumber*4+2] = *(pattern + 2);
+	PATTERNS[frameNumber*4+3] = *(pattern + 3);
+
+}
+
+void StorePattern8(uint16_t frameNumber, unsigned char *pattern)
+{	
+	PATTERNS[frameNumber*8] = *(pattern);
+	PATTERNS[frameNumber*8+1] = *(pattern + 1);
+	PATTERNS[frameNumber*8+2] = *(pattern + 2);
+	PATTERNS[frameNumber*8+3] = *(pattern + 3);
+	PATTERNS[frameNumber*8+4] = *(pattern + 4);
+	PATTERNS[frameNumber*8+5] = *(pattern + 5);
+	PATTERNS[frameNumber*8+6] = *(pattern + 6);
+	PATTERNS[frameNumber*8+7] = *(pattern + 7);
+}
+
+void StorePattern16(uint16_t frameNumber, unsigned char *pattern)
+{	
+	PATTERNS[frameNumber*16] = *(pattern);
+	PATTERNS[frameNumber*16+1] = *(pattern + 1);
+	PATTERNS[frameNumber*16+2] = *(pattern + 2);
+	PATTERNS[frameNumber*16+3] = *(pattern + 3);
+	PATTERNS[frameNumber*16+4] = *(pattern + 4);
+	PATTERNS[frameNumber*16+5] = *(pattern + 5);
+	PATTERNS[frameNumber*16+6] = *(pattern + 6);
+	PATTERNS[frameNumber*16+7] = *(pattern + 7);
+	PATTERNS[frameNumber*16+8] = *(pattern + 8);
+	PATTERNS[frameNumber*16+9] = *(pattern + 9);
+	PATTERNS[frameNumber*16+10] = *(pattern + 10);
+	PATTERNS[frameNumber*16+11] = *(pattern + 11);
+	PATTERNS[frameNumber*16+12] = *(pattern + 12);
+	PATTERNS[frameNumber*16+13] = *(pattern + 13);
+	PATTERNS[frameNumber*16+14] = *(pattern + 14);
+	PATTERNS[frameNumber*16+15] = *(pattern + 16);
+}
+
+void StorePattern24(uint16_t frameNumber, unsigned char *pattern)
+{	
+	PATTERNS[frameNumber*24] = *(pattern);
+	PATTERNS[frameNumber*24+1] = *(pattern + 1);
+	PATTERNS[frameNumber*24+2] = *(pattern + 2);
+	PATTERNS[frameNumber*24+3] = *(pattern + 3);
+	PATTERNS[frameNumber*24+4] = *(pattern + 4);
+	PATTERNS[frameNumber*24+5] = *(pattern + 5);
+	PATTERNS[frameNumber*24+6] = *(pattern + 6);
+	PATTERNS[frameNumber*24+7] = *(pattern + 7);
+	PATTERNS[frameNumber*24+8] = *(pattern + 8);
+	PATTERNS[frameNumber*24+9] = *(pattern + 9);
+	PATTERNS[frameNumber*24+10] = *(pattern + 10);
+	PATTERNS[frameNumber*24+11] = *(pattern + 11);
+	PATTERNS[frameNumber*24+12] = *(pattern + 12);
+	PATTERNS[frameNumber*24+13] = *(pattern + 13);
+	PATTERNS[frameNumber*24+14] = *(pattern + 14);
+	PATTERNS[frameNumber*24+15] = *(pattern + 15);
+	PATTERNS[frameNumber*24+16] = *(pattern + 16);
+	PATTERNS[frameNumber*24+17] = *(pattern + 17);
+	PATTERNS[frameNumber*24+18] = *(pattern + 18);
+	PATTERNS[frameNumber*24+19] = *(pattern + 19);
+	PATTERNS[frameNumber*24+20] = *(pattern + 20);
+	PATTERNS[frameNumber*24+21] = *(pattern + 21);
+	PATTERNS[frameNumber*24+22] = *(pattern + 22);
+	PATTERNS[frameNumber*24+23] = *(pattern + 23);
+}
+
+void StorePattern32(uint16_t frameNumber, unsigned char *pattern)
+{	
+	PATTERNS[frameNumber*32] = *(pattern + 0);
+	PATTERNS[frameNumber*32+1] = *(pattern + 1);
+	PATTERNS[frameNumber*32+2] = *(pattern + 2);
+	PATTERNS[frameNumber*32+3] = *(pattern + 3);
+	PATTERNS[frameNumber*32+4] = *(pattern + 4);
+	PATTERNS[frameNumber*32+5] = *(pattern + 5);
+	PATTERNS[frameNumber*32+6] = *(pattern + 6);
+	PATTERNS[frameNumber*32+7] = *(pattern + 7);
+	PATTERNS[frameNumber*32+8] = *(pattern + 8);
+	PATTERNS[frameNumber*32+9] = *(pattern + 9);
+	PATTERNS[frameNumber*32+10] = *(pattern + 10);
+	PATTERNS[frameNumber*32+11] = *(pattern + 11);
+	PATTERNS[frameNumber*32+12] = *(pattern + 12);
+	PATTERNS[frameNumber*32+13] = *(pattern + 13);
+	PATTERNS[frameNumber*32+14] = *(pattern + 14);
+	PATTERNS[frameNumber*32+15] = *(pattern + 15);
+	PATTERNS[frameNumber*32+16] = *(pattern + 16);
+	PATTERNS[frameNumber*32+17] = *(pattern + 17);
+	PATTERNS[frameNumber*32+18] = *(pattern + 18);
+	PATTERNS[frameNumber*32+19] = *(pattern + 19);
+	PATTERNS[frameNumber*32+20] = *(pattern + 20);
+	PATTERNS[frameNumber*32+21] = *(pattern + 21);
+	PATTERNS[frameNumber*32+22] = *(pattern + 22);
+	PATTERNS[frameNumber*32+23] = *(pattern + 23);
+	PATTERNS[frameNumber*32+24] = *(pattern + 24);
+	PATTERNS[frameNumber*32+25] = *(pattern + 25);
+	PATTERNS[frameNumber*32+26] = *(pattern + 26);
+	PATTERNS[frameNumber*32+27] = *(pattern + 27);
+	PATTERNS[frameNumber*32+28] = *(pattern + 28);
+	PATTERNS[frameNumber*32+29] = *(pattern + 29);
+	PATTERNS[frameNumber*32+30] = *(pattern + 30);
+	PATTERNS[frameNumber*32+31] = *(pattern + 31);
 }
 
 

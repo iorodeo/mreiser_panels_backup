@@ -1,12 +1,12 @@
 //in one bytes because function_X and function_Y are int8_t
-#define FUNCTION_LENGTH 100
 //In the old system OVERFLOW_RATE = 16MHz/8(prescaler)/256(timer0)
 //In the new system OVERFLOW_RATE = 32MHz/8(prescaler)/512(timerE)
 //JL03092010 increase OVERFLOW_RATE 4 times in order to get a higher resolution clock for the handlers
 //#define OVERFLOW_RATE 2000000/256
 #define BUFFER_LENGTH 200 //ringbuffer size in byte
+#define FUNCTION_LENGTH  100 //index of the function ringbuffer, or size of one function buffer write in buffer
 #define OVERFLOW_RATE 8000000/256
-#define UPDATE_RATE OVERFLOW_RATE/400
+#define UPDATE_RATE OVERFLOW_RATE/400 
 #define FUNCTION_RATE OVERFLOW_RATE/50
 
 
@@ -24,6 +24,7 @@ void handle_message_length_2(uint8_t *msg_buffer);
 void handle_message_length_3(uint8_t *msg_buffer);
 void handle_message_length_4(uint8_t *msg_buffer);
 void handle_message_length_5(uint8_t *msg_buffer);
+void handle_message_length_9(uint8_t *msg_buffer);
 void handle_message_length_62(uint8_t *msg_buffer);
 void handle_message_length_63(uint8_t *msg_buffer);
 void handle_message_length_52(uint8_t *msg_buffer);
@@ -36,9 +37,11 @@ void increment_index_y(void);
 void decrement_index_x(void);
 void decrement_index_y(void);
 void fetch_display_frame(uint16_t f_num, uint16_t, uint16_t);
+void display_preload_frame(uint16_t f_num, uint16_t, uint16_t);
 void update_ANOUT(void);
 void update_funcCnt_x(void);
 void update_funcCnt_y(void);
+void update_funcCnt_xy(void);
 
 //helper utilities
 void toggle_trigger(void);
@@ -52,15 +55,17 @@ void i2cMasterSend(uint8_t addr, uint8_t len, uint8_t *data);
 void set_vel_func(uint8_t func_channel, uint8_t func_id);
 void set_pos_func(uint8_t func_channel, uint8_t func_id);
 void set_default_func(uint8_t func_channel);
-
+void loadPattern2Panels(uint8_t pat_num);
 void display_dumped_frame (uint8_t *msg_buffer);
 
 void dump_mat(void);
 void fetch_update_funcX(uint8_t fReset, uint8_t); 
 void fetch_update_funcY(uint8_t fReset, uint8_t);
+uint8_t difference(uint8_t write_index, uint8_t read_index);
 
 unsigned char work_mode[1] EEPROM = {0xff};
 unsigned char arena_config[129] EEPROM;
+
 static uint8_t RESET[2] = {0x00, 0x01};
 static uint8_t DISPLAY[2] = {0x00, 0x02};
 

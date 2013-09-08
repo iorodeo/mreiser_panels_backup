@@ -21,6 +21,7 @@ uint8_t  Laser_active = 0;
 uint8_t  FSMutex = 0;
 uint16_t resolution_x = 4095;
 uint16_t resolution_y = 4095;
+uint8_t  usePreloadedPattern = 0;
 
 uint16_t x_num, y_num;  //the max index for x and y
 volatile uint16_t index_x, index_y; // the current index of x and y
@@ -28,12 +29,12 @@ uint8_t  gs_value, bytes_per_panel_frame, row_compress, ident_compress;
 uint8_t  num_panels = 0;
 uint8_t  x_mode, y_mode;
 volatile uint16_t frame_num = 0;
-int16_t  function_X[FUNCTION_LENGTH];  //ring buffer
-int16_t  function_Y[FUNCTION_LENGTH];  //ring buffer
-volatile uint8_t func_read_index_x = 0;  //read index for the ring buffer function_X[FUNCTION_LENGTH] 
-volatile uint8_t func_read_index_y = 0;	 //read index for the ring buffer function_Y[FUNCTION_LENGTH]
-volatile uint8_t func_write_index_x = 0; //write index for the ring buffer function_X[FUNCTION_LENGTH]
-volatile uint8_t func_write_index_y = 0; //write index for the ring buffer function_X[FUNCTION_LENGTH]
+int16_t  function_X[BUFFER_LENGTH/2]; //ring buffer
+int16_t  function_Y[BUFFER_LENGTH/2];  //ring buffer
+volatile uint8_t func_read_index_x = 0;  //read index for the ring buffer function_X[BUFFER_LENGTH/2] 
+volatile uint8_t func_read_index_y = 0;	 //read index for the ring buffer function_Y[BUFFER_LENGTH/2]
+volatile uint8_t func_write_index_x = 0; //write index for the ring buffer function_X[BUFFER_LENGTH/2]
+volatile uint8_t func_write_index_y = 0; //write index for the ring buffer function_X[BUFFER_LENGTH/2]
 volatile uint8_t func_buffer_size_x = 0;  //share between main function and update_funcCnt_x
 volatile uint8_t func_buffer_size_y = 0;  //share between main function and update_funcCnt_y
 //volatile uint32_t func_global_counter_x = 0;
@@ -43,17 +44,18 @@ volatile uint8_t next_block_y = 1;
 
 volatile uint8_t default_func_x = 1;
 volatile uint8_t default_func_y = 1;
+volatile uint8_t sync_XY_func = 0;
 uint16_t functionX_rate = FUNCTION_RATE;
 uint16_t functionY_rate = FUNCTION_RATE;
 
 uint8_t  laserPattern[125];
-int8_t   gain_x, gain_y, bias_x, bias_y;
+int16_t   gain_x, gain_y, bias_x, bias_y;
 int16_t  X_pos_index, Y_pos_index;
 uint16_t trigger_rate = 200;
 
 uint32_t start_block; // start block of a pattern on SD-card
-uint32_t funcSize_x = 2*FUNCTION_LENGTH; //function file size
-uint32_t funcSize_y = 2*FUNCTION_LENGTH;
+uint32_t funcSize_x = BUFFER_LENGTH; //function file size
+uint32_t funcSize_y = BUFFER_LENGTH;
 FIL      file1, file2, file3, file4;       // File object
 //file1 pattern file; file 2 function file for x channel
 //file2 function file for y channel, file 4 for SD.mat or arena config file
@@ -76,7 +78,7 @@ uint16_t last_load_x = 0;
 uint16_t num_buffer_load_y = 1;
 uint16_t last_load_y = 0;
 
-static const uint8_t VERSION[] = "1.2\0";
+static const uint8_t VERSION[] = "1.3\0";
 static const uint8_t SDInfo[] = "SD.mat\0";
 
 
@@ -289,8 +291,11 @@ int main(void) {
 					case 4:
 						handle_message_length_4(&msg_buffer[0]);
 						break;
-                    case 5: // if length 5, then decode, set x,y index, or set gain, bias
+                    case 5: // if length 5, then decode
                         handle_message_length_5(&msg_buffer[0]);
+                        break;
+					case 9: // if length 9, then decode, set x,y index, or set gain, bias
+                        handle_message_length_9(&msg_buffer[0]);
                         break;
                     case 62: //if length 62, then set laser trigger pattern first 62 byte
                         handle_message_length_62(&msg_buffer[0]);
@@ -304,11 +309,14 @@ int main(void) {
             }// end of if, goes to top if nothing received on UART
             
             // at bottom of while(1) loop, check to see if stop is 0, then unpdate display if the frame has changed.
+			// Also update the function buffer
             if (Stop == 0){  //only send out new pattern if the pattern index has change
-			
                 if (frame_num != frame_num_old) {
-                    frame_num_old = frame_num; //update the 'old' frame number
-                    fetch_display_frame(frame_num, index_x, index_y);
+                    frame_num_old = frame_num; //update the 'old' frame number	
+					if (usePreloadedPattern == 1)
+						display_preload_frame(frame_num, index_x, index_y);
+					else
+						fetch_display_frame(frame_num, index_x, index_y);
                 }
 				
 				//func_buffer_size_x in word, 2 bytes.
@@ -325,7 +333,7 @@ int main(void) {
 					func_idx_y_old = func_read_index_y;
 					fetch_update_funcY(0, next_block_y);	
 					next_block_y = (next_block_y + 1)%num_buffer_load_y; 
-//xprintf(PSTR("func_buffer_size_y=%u, func_read_index_y=%u\n"), func_buffer_size_y, func_read_index_y);	
+					//xprintf(PSTR("func_buffer_size_y=%u, func_read_index_y=%u\n"), func_buffer_size_y, func_read_index_y);	
 				}
 
 			}
@@ -380,19 +388,31 @@ void handle_message_length_1(uint8_t *msg_buffer) {
             Reg_Handler(increment_index_x, UPDATE_RATE, 2, 0); //initilize the 2 and 3 priority interupts to a fast rate so that
             Reg_Handler(increment_index_y, UPDATE_RATE, 3, 0); // the countdown is fast until the setting of the next rate
                                                                 //by the Update_display interupt.
-			if (default_func_x)
-				Reg_Handler(update_funcCnt_x, functionX_rate, 4, 0);
+																
+			if(!default_func_x && !default_func_y && functionX_rate == functionY_rate){ 
+				//We want to synchronize function X and function Y updates in this case
+				xprintf(PSTR("Function X and Y are synchronized.\n"));
+				sync_XY_func = 1;
+				update_funcCnt_xy();
+				Reg_Handler(update_funcCnt_xy, functionX_rate, 4, 1);	
+			}
 			else{
-				update_funcCnt_x();//add this because the function cnt is updated without delay
-				Reg_Handler(update_funcCnt_x, functionX_rate, 4, 1);
+				sync_XY_func = 0;
+				if (default_func_x)
+					Reg_Handler(update_funcCnt_x, functionX_rate, 4, 0);
+				else{
+					update_funcCnt_x();//add this because the function cnt is updated without delay
+					Reg_Handler(update_funcCnt_x, functionX_rate, 4, 1);
 				}
 				
-			if (default_func_y)
-				Reg_Handler(update_funcCnt_y, functionY_rate, 5, 0); 
-			else{
-				update_funcCnt_y();//add this because the function cnt is updated without delay
-				Reg_Handler(update_funcCnt_y, functionY_rate, 5, 1); 			
+				if (default_func_y)
+					Reg_Handler(update_funcCnt_y, functionY_rate, 5, 0); 
+				else{
+					update_funcCnt_y();//add this because the function cnt is updated without delay
+					Reg_Handler(update_funcCnt_y, functionY_rate, 5, 1); 			
 				}
+			}
+			
 			break;
             
         case 0x30: //stop display
@@ -401,12 +421,19 @@ void handle_message_length_1(uint8_t *msg_buffer) {
             Reg_Handler(Update_display, UPDATE_RATE, 1, 0);
             Reg_Handler(increment_index_x, UPDATE_RATE, 2, 0);
             Reg_Handler(increment_index_y, UPDATE_RATE, 3, 0);
-			Reg_Handler(update_funcCnt_x, functionX_rate, 4, 0);
-			Reg_Handler(update_funcCnt_y, functionY_rate, 5, 0); 
+			
+			if(sync_XY_func) 
+				Reg_Handler(update_funcCnt_xy, functionX_rate, 4, 0);
+			else{
+				Reg_Handler(update_funcCnt_x, functionX_rate, 4, 0);
+				Reg_Handler(update_funcCnt_y, functionY_rate, 5, 0); 
+			}
+			
 			if (default_func_x == 0)
 				fetch_update_funcX(1,0);
 			if (default_func_y == 0)	
 				fetch_update_funcY(1,0);
+		
             break;
             
         case 0x25:  //Start display & trigger - same as regular, but this also does trigger
@@ -418,16 +445,28 @@ void handle_message_length_1(uint8_t *msg_buffer) {
             Reg_Handler(Update_display, UPDATE_RATE, 1, 1);
             Reg_Handler(increment_index_x, UPDATE_RATE, 2, 0);
             Reg_Handler(increment_index_y, UPDATE_RATE, 3, 0);
-			if (default_func_x)
-				Reg_Handler(update_funcCnt_x, functionX_rate, 4, 0);
-			else
-				Reg_Handler(update_funcCnt_x, functionX_rate, 4, 1);
+			
+			if(!default_func_x && !default_func_y && functionX_rate == functionY_rate){ 
+				//We want to synchronize function X and function Y updates in this case
+				update_funcCnt_xy();
+				Reg_Handler(update_funcCnt_xy, functionX_rate, 4, 1);
 				
-			if (default_func_y)
-				Reg_Handler(update_funcCnt_y, functionY_rate, 5, 0); 
-			else
-				Reg_Handler(update_funcCnt_y, functionY_rate, 5, 1); 			
+			}else{
+																
+				if (default_func_x)
+					Reg_Handler(update_funcCnt_x, functionX_rate, 4, 0);
+				else{
+					update_funcCnt_x();//add this because the function cnt is updated without delay
+					Reg_Handler(update_funcCnt_x, functionX_rate, 4, 1);
+				}
 				
+				if (default_func_y)
+					Reg_Handler(update_funcCnt_y, functionY_rate, 5, 0); 
+				else{
+					update_funcCnt_y();//add this because the function cnt is updated without delay
+					Reg_Handler(update_funcCnt_y, functionY_rate, 5, 1); 			
+				}
+    		}
             Reg_Handler(toggle_trigger, (uint32_t)OVERFLOW_RATE/trigger_rate, 0, 1); //turn on the trigger toggle
             break;
             
@@ -437,8 +476,14 @@ void handle_message_length_1(uint8_t *msg_buffer) {
             Reg_Handler(Update_display, UPDATE_RATE, 1, 0);
             Reg_Handler(increment_index_x, UPDATE_RATE, 2, 0);
             Reg_Handler(increment_index_y, UPDATE_RATE, 3, 0);
-			Reg_Handler(update_funcCnt_x, functionX_rate, 4, 0);
-			Reg_Handler(update_funcCnt_y, functionY_rate, 5, 0); 
+			
+			if(sync_XY_func) 
+				Reg_Handler(update_funcCnt_xy, functionX_rate, 4, 0);
+			else{
+				Reg_Handler(update_funcCnt_x, functionX_rate, 4, 0);
+				Reg_Handler(update_funcCnt_y, functionY_rate, 5, 0); 
+			}			
+			
             Reg_Handler(toggle_trigger, OVERFLOW_RATE/trigger_rate, 0, 0); //turn off the trigger toggle
 			digitalWrite(2,LOW);    //set the output to low
             break;
@@ -600,7 +645,9 @@ void handle_message_length_2(uint8_t *msg_buffer) {
 		case 0x10:  // get ADC value from a ADC channel (1-4)
             xprintf(PSTR("ADC_value =  %d:\n"), analogRead(argument_byte - 1));
             break;	
-			
+		case 0x11 : 
+			loadPattern2Panels(argument_byte);
+			break;
             
         default: i2cMasterSend(0x00, 8, ERROR_CODES[2]);
     }
@@ -684,7 +731,7 @@ void handle_message_length_3(uint8_t *msg_buffer) {
 		case 0x35: //set resoultion_x and resolution_y	
 			resolution_x = (uint32_t)msg_buffer[1] * 4095/10;
 			resolution_y = (uint32_t)msg_buffer[2] * 4095/10;
-			break;
+			break;			
             
         default: i2cMasterSend(0x00, 8, ERROR_CODES[3]);
     }
@@ -721,30 +768,44 @@ void handle_message_length_5(uint8_t *msg_buffer) {
             display_flag = 0;  //clear the display flag
             if (quiet_mode_on == 0)
                 xprintf(PSTR("set_position: index_x= %u,  index_y= %u, and frame_num= %u\n"), index_x, index_y, frame_num);
-            fetch_display_frame(frame_num, index_x, index_y);
-            break;
+				
+			if (usePreloadedPattern == 1)
+				display_preload_frame(frame_num, index_x, index_y);
+			else
+				fetch_display_frame(frame_num, index_x, index_y);
+            
+			break;
+            
+            
+        default:
+            i2cMasterSend(0x00, 8, ERROR_CODES[5]);
+    }
+}
 
-        case 0x71:
+//set gain and bias
+void handle_message_length_9(uint8_t *msg_buffer) {
+    switch(msg_buffer[0]) {
+	//load laser trigger pattern first 62 byte data. Laer patter has 128 bytes, but since
+	//the value is either 0 or 1, we can combined them in 12 bytes to 
+	//save serial communicaiton time
+
+        case 0x01:
             //'send_gain_bias', all of these are signed byte values
-            gain_x = msg_buffer[1];
-            bias_x = msg_buffer[2];
-            gain_y = msg_buffer[3];
-            bias_y = msg_buffer[4];
+            gain_x = (uint16_t) msg_buffer[1] + (256*msg_buffer[2]);
+            bias_x = (uint16_t) msg_buffer[3] + (256*msg_buffer[4]);
+            gain_y = (uint16_t) msg_buffer[5] + (256*msg_buffer[6]);
+            bias_y = (uint16_t) msg_buffer[7] + (256*msg_buffer[8]);
 			if (quiet_mode_on == 0)
                 xprintf(PSTR("set_gain_bias: gain_x= %d,  bias_x= %d, gain_y= %d, bias_y=%d\n"), gain_x, bias_x, gain_y, bias_y);
             break;
 		
 		default:
-            i2cMasterSend(0x00, 8, ERROR_CODES[5]);
+            i2cMasterSend(0x00, 8, ERROR_CODES[6]);
 			
 	}
 }
 
-
-//load laser trigger pattern first 62 byte data. Laer patter has 128 bytes, but since
-//the value is either 0 or 1, we can combined them in 12 bytes to 
-//save serial communicaiton time
-
+			
 void handle_message_length_62(uint8_t *msg_buffer)
 {   
 	uint8_t i;
@@ -807,6 +868,32 @@ void display_dumped_frame (uint8_t *msg_buffer) {
     digitalWrite(1, LOW); // set line low at end of frame write
 }
 
+void display_preload_frame(uint16_t f_num, uint16_t Xindex, uint16_t Yindex){
+    // this function will fetch the current frame from the SD-card and display it.
+    // pass in f_num instead of using global frame_num to ensure that the value of
+    // frame_num does not change during this function's run
+    // suppose f_num is from 0 to (n_num * y_num - 1)
+    uint16_t X_dac_val, Y_dac_val;
+	uint8_t CMD[2];
+
+	//when preload pattern to panels (super fast mode), we update frame and analog output in this function in stead of
+	//in fetch_display_frame because this fuction is ISR and has a higher priority than fetch_display_frame called by 
+	//main funciton. In this way, we can keep update frame during f_read to in order to update function data 
+	digitalWrite(1, HIGH); 
+	//ask all panels to load f_num
+	CMD[0] = *((uint8_t *)&f_num + 1) | 0xf0;  // this is the high byte
+	CMD[1] = *(uint8_t *)&f_num; //this is the low byte
+		
+	i2cMasterSend(0, 2, CMD); 	//use 2 to follow the old protocol temporarily
+		
+	//update analog output after updating frames 		
+	X_dac_val = ((uint32_t)Xindex + 1)*32767/x_num; 
+	analogWrite(0, X_dac_val); // make it a value in the range 0 - 32767 (0 - 10V)
+	Y_dac_val = ((uint32_t)Yindex + 1)*32767/y_num; 
+	analogWrite(1, Y_dac_val); // make it a value in the range 0 - 32767 (0 - 10V)
+	digitalWrite(1, LOW); // set line low at end of frame write	
+}
+			
 
 void fetch_display_frame(uint16_t f_num, uint16_t Xindex, uint16_t Yindex){
     // this function will fetch the current frame from the SD-card and display it.
@@ -830,108 +917,106 @@ void fetch_display_frame(uint16_t f_num, uint16_t Xindex, uint16_t Yindex){
 	}
 				
 	display_flag = 0;  //clear the display flag
-    len = num_panels * bytes_per_panel_frame;
+
+	len = num_panels * bytes_per_panel_frame;
 	
 	if (len%512 != 0)
 		block_per_frame = len/512 + 1;
-	else
-		block_per_frame = len/512;  //for gs=4 and rc=0
+	else 
+		block_per_frame = len/512;
 		
-		
-    uint8_t  frameBuff[len];
-	//uint8_t * FLASH = &frameBuff[0];
-    offset = 512 + (uint32_t)f_num * 512 * block_per_frame;
+	uint8_t  frameBuff[len];
+	offset = 512 + (uint32_t)f_num * 512 * block_per_frame;
 
-    res = f_lseek(&file1, offset);
-    if ((res == FR_OK) && (file1.fptr == offset)) {
-        res = f_read(&file1, frameBuff, len, &cnt);
-        if ((res == FR_OK) && (cnt == len)) {	
+	res = f_lseek(&file1, offset);
+	if ((res == FR_OK) && (file1.fptr == offset)) {
+		res = f_read(&file1, frameBuff, len, &cnt);
+		if ((res == FR_OK) && (cnt == len)) {	
 		
 
-            buff_index = 0;
-            
-            for (panel_index = 1; panel_index <= num_panels; panel_index++){
+			buff_index = 0;
+			
+			for (panel_index = 1; panel_index <= num_panels; panel_index++){
                 for(j = 0;j < bytes_per_panel_frame;j++){
                     FLASH[j] = frameBuff[buff_index++]; //not good for performance, no need to copy the data
                 }
+
+				packet_sent = 0; //used with compression to simplify coniditionals.
+				if (ident_compress == 1) {
+					if (bytes_per_panel_frame == 8){
+						if( (FLASH[0] == FLASH[1])&&(FLASH[2] == FLASH[3])&&(FLASH[4] == FLASH[5])&&(FLASH[6] == FLASH[7]) ){
+							if( (FLASH[1] == FLASH[2])&&(FLASH[3] == FLASH[4])&&(FLASH[5] == FLASH[6]) ){
+								i2cMasterSend(panel_index, 1, &FLASH[0]); //send a 1 byte packet with the correct row_compressed value.
+								packet_sent = 1;
+							} //end of second round of comparisons
+						} //end of first round of byte comparisons
+					} // end of check if bytes_per_panel_frame is 8
+					
+					if (bytes_per_panel_frame == 24){
+						if( (FLASH[0] == FLASH[1])&&(FLASH[2] == FLASH[3])&&(FLASH[4] == FLASH[5])&&(FLASH[6] == FLASH[7]) ){
+							if( (FLASH[1] == FLASH[2])&&(FLASH[3] == FLASH[4])&&(FLASH[5] == FLASH[6]) ){
+								if( (FLASH[8+0] == FLASH[8+1])&&(FLASH[8+2] == FLASH[8+3])&&(FLASH[8+4] == FLASH[8+5])&&(FLASH[8+6] == FLASH[8+7]) ){
+									if( (FLASH[8+1] == FLASH[8+2])&&(FLASH[8+3] == FLASH[8+4])&&(FLASH[8+5] == FLASH[8+6]) ){
+										if( (FLASH[16+0] == FLASH[16+1])&&(FLASH[16+2] == FLASH[16+3])&&(FLASH[16+4] == FLASH[16+5])&&(FLASH[16+6] == FLASH[16+7]) ){
+											if( (FLASH[16+1] == FLASH[16+2])&&(FLASH[16+3] == FLASH[16+4])&&(FLASH[16+5] == FLASH[16+6]) ){
+												gscale[0] = FLASH[0];
+												gscale[1] = FLASH[8];
+												gscale[2] = FLASH[16];
+												i2cMasterSend(panel_index, 3, &gscale[0]); //send a 3 byte packet with the correct row_compressed value.
+												packet_sent = 1;
+											} //end of sixth round of comparisons
+										} //end of fifth round of comparisons
+									} //end of fourth round of comparisons
+								} //end of third round of comparisons
+							} //end of second round of comparisons
+						} //end of first round of byte comparisons
+					} // end of check if bytes_per_panel_frame is 24
+					
+					if (bytes_per_panel_frame == 32){
+						if( (FLASH[0] == FLASH[1])&&(FLASH[2] == FLASH[3])&&(FLASH[4] == FLASH[5])&&(FLASH[6] == FLASH[7]) ){
+							if( (FLASH[1] == FLASH[2])&&(FLASH[3] == FLASH[4])&&(FLASH[5] == FLASH[6]) ){
+								if( (FLASH[8+0] == FLASH[8+1])&&(FLASH[8+2] == FLASH[8+3])&&(FLASH[8+4] == FLASH[8+5])&&(FLASH[8+6] == FLASH[8+7]) ){
+									if( (FLASH[8+1] == FLASH[8+2])&&(FLASH[8+3] == FLASH[8+4])&&(FLASH[8+5] == FLASH[8+6]) ){
+										if( (FLASH[16+0] == FLASH[16+1])&&(FLASH[16+2] == FLASH[16+3])&&(FLASH[16+4] == FLASH[16+5])&&(FLASH[16+6] == FLASH[16+7]) ){
+											if( (FLASH[16+1] == FLASH[16+2])&&(FLASH[16+3] == FLASH[16+4])&&(FLASH[16+5] == FLASH[16+6]) ){
+												if( (FLASH[24+0] == FLASH[24+1])&&(FLASH[24+2] == FLASH[24+3])&&(FLASH[24+4] == FLASH[24+5])&&(FLASH[24+6] == FLASH[24+7]) ){
+													if( (FLASH[24+1] == FLASH[24+2])&&(FLASH[24+3] == FLASH[24+4])&&(FLASH[24+5] == FLASH[24+6]) ){
+														gscale[0] = FLASH[0];
+														gscale[1] = FLASH[8];
+														gscale[2] = FLASH[16];
+														gscale[3] = FLASH[24];
+														i2cMasterSend(panel_index, 4, &gscale[0]); //send a 4 byte packet with the correct row_compressed value.
+														packet_sent = 1;
+													}//end
+												}//end
+											} //end of sixth round of comparisons
+										} //end of fifth round of comparisons
+									} //end of fourth round of comparisons
+								} //end of third round of comparisons
+							} //end of second round of comparisons
+						} //end of first round of byte comparisons
+					} // end of check if bytes_per_panel_frame is 32
+				} //end of if ident_compress == 1
 				
-                packet_sent = 0; //used with compression to simplify coniditionals.
-                if (ident_compress == 1) {
-                    if (bytes_per_panel_frame == 8){
-                        if( (FLASH[0] == FLASH[1])&&(FLASH[2] == FLASH[3])&&(FLASH[4] == FLASH[5])&&(FLASH[6] == FLASH[7]) ){
-                            if( (FLASH[1] == FLASH[2])&&(FLASH[3] == FLASH[4])&&(FLASH[5] == FLASH[6]) ){
-                                i2cMasterSend(panel_index, 1, &FLASH[0]); //send a 1 byte packet with the correct row_compressed value.
-                                packet_sent = 1;
-                            } //end of second round of comparisons
-                        } //end of first round of byte comparisons
-                    } // end of check if bytes_per_panel_frame is 8
-                    
-                    if (bytes_per_panel_frame == 24){
-                        if( (FLASH[0] == FLASH[1])&&(FLASH[2] == FLASH[3])&&(FLASH[4] == FLASH[5])&&(FLASH[6] == FLASH[7]) ){
-                            if( (FLASH[1] == FLASH[2])&&(FLASH[3] == FLASH[4])&&(FLASH[5] == FLASH[6]) ){
-                                if( (FLASH[8+0] == FLASH[8+1])&&(FLASH[8+2] == FLASH[8+3])&&(FLASH[8+4] == FLASH[8+5])&&(FLASH[8+6] == FLASH[8+7]) ){
-                                    if( (FLASH[8+1] == FLASH[8+2])&&(FLASH[8+3] == FLASH[8+4])&&(FLASH[8+5] == FLASH[8+6]) ){
-                                        if( (FLASH[16+0] == FLASH[16+1])&&(FLASH[16+2] == FLASH[16+3])&&(FLASH[16+4] == FLASH[16+5])&&(FLASH[16+6] == FLASH[16+7]) ){
-                                            if( (FLASH[16+1] == FLASH[16+2])&&(FLASH[16+3] == FLASH[16+4])&&(FLASH[16+5] == FLASH[16+6]) ){
-                                                gscale[0] = FLASH[0];
-                                                gscale[1] = FLASH[8];
-                                                gscale[2] = FLASH[16];
-                                                i2cMasterSend(panel_index, 3, &gscale[0]); //send a 3 byte packet with the correct row_compressed value.
-                                                packet_sent = 1;
-                                            } //end of sixth round of comparisons
-                                        } //end of fifth round of comparisons
-                                    } //end of fourth round of comparisons
-                                } //end of third round of comparisons
-                            } //end of second round of comparisons
-                        } //end of first round of byte comparisons
-                    } // end of check if bytes_per_panel_frame is 24
-                    
-                    if (bytes_per_panel_frame == 32){
-                        if( (FLASH[0] == FLASH[1])&&(FLASH[2] == FLASH[3])&&(FLASH[4] == FLASH[5])&&(FLASH[6] == FLASH[7]) ){
-                            if( (FLASH[1] == FLASH[2])&&(FLASH[3] == FLASH[4])&&(FLASH[5] == FLASH[6]) ){
-                                if( (FLASH[8+0] == FLASH[8+1])&&(FLASH[8+2] == FLASH[8+3])&&(FLASH[8+4] == FLASH[8+5])&&(FLASH[8+6] == FLASH[8+7]) ){
-                                    if( (FLASH[8+1] == FLASH[8+2])&&(FLASH[8+3] == FLASH[8+4])&&(FLASH[8+5] == FLASH[8+6]) ){
-                                        if( (FLASH[16+0] == FLASH[16+1])&&(FLASH[16+2] == FLASH[16+3])&&(FLASH[16+4] == FLASH[16+5])&&(FLASH[16+6] == FLASH[16+7]) ){
-                                            if( (FLASH[16+1] == FLASH[16+2])&&(FLASH[16+3] == FLASH[16+4])&&(FLASH[16+5] == FLASH[16+6]) ){
-                                                if( (FLASH[24+0] == FLASH[24+1])&&(FLASH[24+2] == FLASH[24+3])&&(FLASH[24+4] == FLASH[24+5])&&(FLASH[24+6] == FLASH[24+7]) ){
-                                                    if( (FLASH[24+1] == FLASH[24+2])&&(FLASH[24+3] == FLASH[24+4])&&(FLASH[24+5] == FLASH[24+6]) ){
-                                                        gscale[0] = FLASH[0];
-                                                        gscale[1] = FLASH[8];
-                                                        gscale[2] = FLASH[16];
-                                                        gscale[3] = FLASH[24];
-                                                        i2cMasterSend(panel_index, 4, &gscale[0]); //send a 4 byte packet with the correct row_compressed value.
-                                                        packet_sent = 1;
-                                                    }//end
-                                                }//end
-                                            } //end of sixth round of comparisons
-                                        } //end of fifth round of comparisons
-                                    } //end of fourth round of comparisons
-                                } //end of third round of comparisons
-                            } //end of second round of comparisons
-                        } //end of first round of byte comparisons
-                    } // end of check if bytes_per_panel_frame is 32
-                } //end of if ident_compress == 1
-                
-                if (packet_sent == 0){ //above conditionals rejected sending a simple pattern patch
-                    i2cMasterSend(panel_index, bytes_per_panel_frame, &FLASH[0]);
-                }
-            } //end of for all panels loop
-        }
-        else {
-            if (quiet_mode_on == 0){
-                xputs(PSTR("Error in f_read in fetch_display_frame!\n"));
-                xprintf(PSTR("RES = %u, f_num= %u, cnt= %u\n"), res, f_num, cnt);
-            }
-        }
-    } else {
-        
-        if (quiet_mode_on == 0){
-            xputs(PSTR("Error in f_lseek in fetch_display_frame!\n"));
-            xprintf(PSTR("RES = %u, f_num= %u, offset = %lu\n"), res, f_num, offset);
-        }
-    }
-    
-    //update analog out
+				if (packet_sent == 0){ //above conditionals rejected sending a simple pattern patch
+					i2cMasterSend(panel_index, bytes_per_panel_frame, &FLASH[0]);
+				}
+			} //end of for all panels loop
+		}
+		else {
+			if (quiet_mode_on == 0){
+				xputs(PSTR("Error in f_read in fetch_display_frame!\n"));
+				xprintf(PSTR("RES = %u, f_num= %u, cnt= %u\n"), res, f_num, cnt);
+			}
+		}
+	} else { 
+		if (quiet_mode_on == 0){
+			xputs(PSTR("Error in f_lseek in fetch_display_frame!\n"));
+			xprintf(PSTR("RES = %u, f_num= %u, offset = %lu\n"), res, f_num, offset);
+		}
+	}
+		
+    //update analog out only when we update a frame
     if (x_mode != 5){
 		X_dac_val = ((uint32_t)Xindex + 1)*32767/x_num;
 		analogWrite(0, X_dac_val); // make it a value in the range 0 - 32767 (0 - 10V)
@@ -944,7 +1029,7 @@ void fetch_display_frame(uint16_t f_num, uint16_t Xindex, uint16_t Yindex){
     }
 
 	
-	  //also update the output lines for quadrant-type learning patterns
+	//also update the output lines for quadrant-type learning patterns
 	if (Laser_active == 1)
 	{
 		arrayIndex = index_x/8;  // find the index in laserPattern array for index_x
@@ -982,12 +1067,6 @@ void Update_display(void) {
             temp_ADC_val = X_val; //the previous value
             X_val = ( 6*temp_ADC_val + 4*X_ADC1 )/10;   //this is a 60% old value, 40% new value smoother
             X_rate = (int16_t)((int32_t)(X_val*gain_x)/10 + 5*bias_x)/2;  //X_val can go as high as 4095, gain_x 100fiu and bias_x 250
-            
-            //set a frame rate limit 256fps
-            //if (X_rate >256)
-            //    X_rate = 256;
-            //else if (X_rate < -256)
-            //    X_rate = -256;
             break;
         case 2: //closed loop w bias - use CH0 - CH1, and function gen. to set x rate
             X_ADC1 = analogRead(0)/4; // 1 volt = 102
@@ -1009,7 +1088,7 @@ void Update_display(void) {
 			index_x = temp_index_x;
 			
             frame_num = index_y*x_num + index_x;
-            X_rate = 0;			
+            X_rate = 0;	
 			break;
 			
 		case 4:
@@ -1017,8 +1096,6 @@ void Update_display(void) {
 			X_rate = 0;
 			break;			
     }
-
-	
     
     switch(y_mode) {
         case 0:   // open loop - use function generator to set x rate
@@ -1029,14 +1106,7 @@ void Update_display(void) {
             Y_ADC1 = analogRead(1)/4; // 1 volt = 102fps
             temp_ADC_val = Y_val; //the previous value
             Y_val = ( 6*temp_ADC_val + 4*Y_ADC1)/10;   //this is a 60% old value, 40% new value smoother
-            Y_rate = (int16_t)((int32_t)(Y_val*gain_y)/10 + 5*bias_y)/2; //Y_val can go as high as 4095, gain_y 100, and bias_y 250.
-            
-            //set a frame rate limit 256fps
-            //if (Y_rate > 256)
-            //    Y_rate = 256;
-            //else if (Y_rate < -256)
-            //    Y_rate = -256;
-            
+            Y_rate = (int16_t)((int32_t)(Y_val*gain_y)/10 + 5*bias_y)/2; //Y_val can go as high as 4095, gain_y 100, and bias_y 250.   
             break;
         case 2: //closed loop w bias - use CH2 - CH3, and function gen. to set x rate
             Y_ADC1 = analogRead(1)/4; // 1 volt = 102
@@ -1045,6 +1115,7 @@ void Update_display(void) {
             //add in the bias to CL mode on ch Y
             Y_rate = (int16_t)((int32_t)(Y_val*gain_y)/10 + 2*function_Y[func_read_index_y] + 5*bias_y)/2; //Y_val can go as high as 4095
             break;
+            //do something with errors here for default case
         case 3: // POS mode, use CH3 to set the frame position (pos ctrl, not vel ctrl)
             Y_ADC2 = analogRead(3);   //Y_ADC2 ranges from 0-4095 when input 0-10V
 			
@@ -1057,16 +1128,16 @@ void Update_display(void) {
             if (temp_index_y <= 0)  {temp_index_y = 0;} //or too small
 			index_y = temp_index_y;
             frame_num = index_y*x_num + index_x;
-            Y_rate = 0;			
+            Y_rate = 0;				
+			
             break;
 			
 		case 4:
 		case 5:
 			Y_rate = 0;
 			break;
-            //do something with errors here for default case
     }
-    
+	
     //in the above x,y_val computation, there is a div by 10 to take away gain scaling
     //so gain_x of 10 is 1X gain, gain_x of 20 = 2X ...
     
@@ -1075,21 +1146,21 @@ void Update_display(void) {
     if (Stop == 1){
         X_rate = Y_rate = 0;
     }
-    
+  
     if (X_rate > 0)
         Update_Reg_Handler(increment_index_x, (uint32_t)OVERFLOW_RATE/abs(X_rate), 2, 1);
     else if (X_rate < 0)
         Update_Reg_Handler(decrement_index_x, (uint32_t)OVERFLOW_RATE/abs(X_rate), 2, 1);
     else     //X_rate == 0
         Update_Reg_Handler(decrement_index_x, (UPDATE_RATE), 2, 0);
-    
-    
+	
     if (Y_rate > 0)
         Update_Reg_Handler(increment_index_y, (uint32_t)OVERFLOW_RATE/abs(Y_rate), 3, 1);
     else if (Y_rate < 0)
         Update_Reg_Handler(decrement_index_y, (uint32_t)OVERFLOW_RATE/abs(Y_rate), 3, 1);
     else      //Y_rate == 0
         Update_Reg_Handler(decrement_index_y, (UPDATE_RATE), 3, 0);
+	
     
     //if the rates are too high, track the largest one to set warning LED
     x_gt_y = (X_rate >= Y_rate);
@@ -1097,14 +1168,13 @@ void Update_display(void) {
 
 
 void increment_index_x(void) {
-    
+	
     index_x++;
     if (index_x >= x_num)
 		index_x = 0;
     
     
     frame_num = index_y*x_num + index_x;
-	
     if (x_gt_y) display_flag++;
 }
 
@@ -1112,22 +1182,23 @@ void increment_index_x(void) {
 void increment_index_y(void) {
     index_y++;
     if (index_y >= y_num)
-    {index_y = 0;}
+		{index_y = 0;}
     
-    frame_num = index_y*x_num + index_x;
+    frame_num = index_y*x_num + index_x;	
 	
     if (x_gt_y == 0) display_flag++;
 }
 
 
 void decrement_index_x(void) {
-    
+	
     if (index_x <= 0)    //just to be safe, use less than
     {index_x = x_num - 1;}    //but these are unsigned
     else
     {index_x--;}
     
-    frame_num = index_y*x_num + index_x;
+    frame_num = index_y*x_num + index_x;	
+	
     if (x_gt_y) display_flag++;
 }
 
@@ -1139,6 +1210,7 @@ void decrement_index_y(void) {
     {index_y--;}
     
     frame_num = index_y*x_num + index_x;
+	
     if (x_gt_y == 0) display_flag++;
 }
 
@@ -1148,7 +1220,166 @@ void toggle_trigger(void) {
     digitalToggle(3); //toggle digital 3 to trigger camera
 }
 
+void loadPattern2Panels(uint8_t pat_num) {
+    //sets the pattern ID, in future return 0 or 1 if error/succeed
+	//currently we only support gs = 1 and non-row compression mode
+    uint16_t num_frames;
+    static uint8_t str[12];
+    uint8_t  pattDataBuff[512];
+    uint8_t res;
+	uint8_t j, panel_index;
+	uint16_t len, cnt, buff_index;
+	uint32_t offset;
+	//uint16_t X_dac_val, Y_dac_val;
+	uint8_t sreg = SREG;
+	uint8_t block_per_frame;
+	uint8_t tempVal, bitIndex, arrayIndex;
+	uint8_t CMD[34];
+	uint16_t f_num;
+	uint16_t bytes_per_panel_patten;
+				
+    
+    if (pat_num < 10)
+        sprintf(str, "pat000%d.pat\0", pat_num);
+    else if (pat_num < 100)
+        sprintf(str, "pat00%d.pat\0", pat_num);
+    else if (pat_num < 1000)
+        sprintf(str, "pat0%d.pat\0", pat_num);
+    else
+        if (quiet_mode_on == 0)
+            xputs(PSTR("pat_num is too big.\n"));
+    
+    res = f_open(&file1, str, FA_OPEN_EXISTING | FA_READ);
+    if (res == FR_OK) {
+        res = f_read(&file1, pattDataBuff, 512, &cnt); // read the 10 byte test header info block
+        if ((res == FR_OK) && (cnt == 512)) {
 
+            // get the test header info
+            ((uint8_t*)&x_num)[0] = pattDataBuff[0];
+            ((uint8_t*)&x_num)[1] = pattDataBuff[1];
+            ((uint8_t*)&y_num)[0] = pattDataBuff[2];
+            ((uint8_t*)&y_num)[1] = pattDataBuff[3];
+            num_panels = pattDataBuff[4];
+            gs_value = pattDataBuff[5];   //11, 12, 13, or 14 means use row compression
+            
+            
+            num_frames = x_num * y_num;
+            if ((gs_value >= 11) & (gs_value <= 14)) {
+                gs_value = gs_value - 10;
+                row_compress = 1;
+                bytes_per_panel_frame = gs_value;
+            }
+            else {
+                row_compress = 0;
+                bytes_per_panel_frame = gs_value * 8;
+            }
+            index_x = index_y = 0;
+            frame_num = 0;
+            Stop = 1;
+            display_flag = 0;  //clear the display flag
+			bytes_per_panel_patten = num_frames*bytes_per_panel_frame;
+            if (quiet_mode_on == 0){
+                xprintf(PSTR("preload pattern %u:\n"), pat_num);
+                xprintf(PSTR("  x_num = %u\n  y_num = %u\n  num_panels = %u\n  gs_value = %u\n row_compression = %u\n"),
+                        x_num, y_num, num_panels, gs_value, row_compress);
+				xprintf(PSTR("  bytes_per_panel_frame = %u\n  bytes_per_panel_pattern = %u\n"),
+                        bytes_per_panel_frame, bytes_per_panel_patten);
+            }
+			
+			//since panel has only 800 byte for the pattern per panel, we need to check before tranfer
+			if (bytes_per_panel_patten <= 800)
+			{
+				for(f_num = 0; f_num < num_frames; ++f_num)
+				{
+					len = num_panels * bytes_per_panel_frame;
+					block_per_frame = len/512 + 1;
+					uint8_t  frameBuff[len];
+					offset = 512 + (uint32_t)f_num * 512 * block_per_frame;
+					//xprintf(PSTR("offset %lu, f_num %u\n"), offset, f_num);
+					res = f_lseek(&file1, offset);
+					if ((res == FR_OK) && (file1.fptr == offset)) {
+						res = f_read(&file1, frameBuff, len, &cnt);
+						if ((res == FR_OK) && (cnt == len)) {							
+						
+							buff_index = 0;
+							
+							CMD[bytes_per_panel_frame] = *(uint8_t *)&f_num;
+							CMD[bytes_per_panel_frame+1] = *((uint8_t *)&f_num + 1);	
+								
+							for (panel_index = 1; panel_index <= num_panels; panel_index++){
+								//FLASH = &frameBuff[buff_index];
+
+								for(j=0;j<bytes_per_panel_frame;++j)
+								{
+									CMD[j] = frameBuff[buff_index + j];									
+								}
+					
+								
+								if (row_compress == 0)
+									i2cMasterSend(panel_index, bytes_per_panel_frame+2, CMD);
+								else{
+									switch(gs_value) {
+									case 1: //the data format is [5, data, f_num_LB, f_num_HB , x, x]
+										i2cMasterSend(panel_index, 5, CMD);
+										break;
+									case 3: //the data format is [6, data1, data2, data 3, f_num_LB, f_num_HB , x]
+										i2cMasterSend(panel_index, 6, CMD);
+										break;
+									case 4: //the data format is [7, data1, data2, data 3, data4, f_num_LB, f_num_HB , x]
+										i2cMasterSend(panel_index, 7, CMD);
+										break;
+									default:
+										break;
+									}
+								}
+								
+								buff_index += bytes_per_panel_frame;
+
+							} //end of for all panels loop
+						//xprintf(PSTR("f_num_LB %u, f_num_HB %u\n"), CMD[bytes_per_panel_frame], CMD[bytes_per_panel_frame+1]);		
+						}
+						else {
+							if (quiet_mode_on == 0){
+								xputs(PSTR("Error in f_read in loadPattern2Panels!\n"));
+								xprintf(PSTR("RES = %u, f_num= %u, cnt= %u\n"), res, f_num, cnt);
+								return;
+							}
+						}
+					} else {
+						
+						if (quiet_mode_on == 0){
+							xputs(PSTR("Error in f_lseek in loadPattern2Panels!\n"));
+							xprintf(PSTR("RES = %u, f_num= %u, offset = %lu\n"), res, f_num, offset);
+							return;
+						}
+					}
+				}
+			}
+			else{
+				xprintf(PSTR("Pattern size is upto 800 byte per panel.\n"));
+				xprintf(PSTR("This pattern size is %lu\n"), bytes_per_panel_patten);
+				xprintf(PSTR("Failed to load this Pattern to Panels\n"));
+				usePreloadedPattern = 0;
+				//set_pattern(pat_num); didn't work
+				return;
+			}
+			
+        } else {
+            if (quiet_mode_on == 0)
+                xputs(PSTR("Error reading in pattern file\n"));
+			return;
+        }
+    } else {
+        if (quiet_mode_on == 0)
+            xputs(PSTR("Error opening pattern file\n"));
+			return;
+    }
+	
+	res = f_close(&file1);
+	usePreloadedPattern = 1;
+	xprintf(PSTR("Successfully load pattern %u to the panels\n"), pat_num);
+	
+}
 
 void set_pattern(uint8_t pat_num) {
     //sets the pattern ID, in future return 0 or 1 if error/succeed
@@ -1165,7 +1396,7 @@ void set_pattern(uint8_t pat_num) {
     else if (pat_num < 1000)
         sprintf(str, "pat0%d.pat\0", pat_num);
     else
-        xputs(PSTR("pat_num is too big.\n"));
+            xputs(PSTR("pat_num is too big.\n"));
    
 	
     res = f_close(&file1);
@@ -1211,6 +1442,7 @@ void set_pattern(uint8_t pat_num) {
     } else
     xputs(PSTR("Error opening pattern file\n"));
 
+	usePreloadedPattern = 0;
 }
 
 void set_hwConfig(uint8_t config_num) {
@@ -1228,7 +1460,7 @@ void set_hwConfig(uint8_t config_num) {
     else if (config_num < 1000)
         sprintf(str, "cfg0%d.cfg\0", config_num);
     else
-        xputs(PSTR("config_num is too big.\n"));
+            xputs(PSTR("config_num is too big.\n"));
 			
     res = f_open(&file4, str, FA_OPEN_EXISTING | FA_READ);
     if (res == FR_OK) {
@@ -1255,18 +1487,30 @@ void benchmark_pattern(void) { // this function assumes that a pattern has been 
     uint16_t frame_ind;
     uint32_t bench_time;
     uint16_t frame_rate;
-    
+	
     Stop = 1;
     num_frames = x_num*y_num;
     
     timer_coarse_tic();
-    
-    for(frame_ind = 0; frame_ind < num_frames; frame_ind++)
-        fetch_display_frame(frame_ind, index_x, index_y);
-    
+	
+	for(index_y = 0; index_y < y_num; index_y++)
+		for(index_x = 0; index_x < x_num; index_x++)
+		{
+			frame_ind = index_y*x_num + index_x;
+
+			if(usePreloadedPattern == 1)
+				display_preload_frame(frame_ind, index_x, index_y);
+			else
+				fetch_display_frame(frame_ind, index_x, index_y);
+		}
+	
     bench_time = timer_coarse_toc();
     frame_rate = ((uint32_t)num_frames*1000)/bench_time;
     xprintf(PSTR(" bench_time = %lu ms, frame_rate = %u\n"), bench_time, frame_rate);
+	
+	//reset index_x and index_y
+	index_x=0;
+	index_y=0;
 }
 
 void i2cMasterSend(uint8_t panel, uint8_t len, uint8_t *data) {
@@ -1308,7 +1552,7 @@ void i2cMasterSend(uint8_t panel, uint8_t len, uint8_t *data) {
                     break;
             }
             
-            while (twi->status != TWIM_STATUS_READY);
+			while (twi->status != TWIM_STATUS_READY);
             TWI_MasterWrite(twi, addr, data, len);
         }
     }
@@ -1316,6 +1560,7 @@ void i2cMasterSend(uint8_t panel, uint8_t len, uint8_t *data) {
 
 void set_default_func(uint8_t func_channel) {
     uint16_t funcCnt;
+	
     
     switch (func_channel) {
         case 1:
@@ -1348,7 +1593,7 @@ void set_default_func(uint8_t func_channel) {
             //Reg_Handler(update_funcCnt_y, functionY_rate, 5, 1);//don't need to enable ISR
             break;
         default:
-            xputs(PSTR("Wrong function channel number.\n"));
+                xputs(PSTR("Wrong function channel number.\n"));
 			break;
     }
     
@@ -1358,9 +1603,8 @@ void set_default_func(uint8_t func_channel) {
 void set_pos_func(uint8_t func_channel, uint8_t func_id) {
     uint16_t cnt;
     uint8_t tmpCnt;
+
     uint8_t str[12];
-    //uint8_t func_name_x[100];
-    //uint8_t func_name_y[100];
     uint8_t res, func_name_len;
     uint8_t posFuncBuff[512];
     
@@ -1372,7 +1616,7 @@ void set_pos_func(uint8_t func_channel, uint8_t func_id) {
     else if (func_id < 1000)
         sprintf(str, "pos0%d.fun\0", func_id);
     else
-        xputs(PSTR("function id is too big.\n"));
+            xputs(PSTR("function id is too big.\n"));
     
     switch(func_channel) {
         case 1:    //channel x
@@ -1383,6 +1627,7 @@ void set_pos_func(uint8_t func_channel, uint8_t func_id) {
             
             res = f_open(&file2, str, FA_OPEN_EXISTING | FA_READ);
             if (res == FR_OK) {
+				
                 res = f_read(&file2, posFuncBuff, 512, &cnt);
                 if ((res == FR_OK) && (cnt == 512)) {
                     // get the test header info
@@ -1417,12 +1662,12 @@ void set_pos_func(uint8_t func_channel, uint8_t func_id) {
 				num_buffer_load_x = funcSize_x / FUNCTION_LENGTH;
 			else
 				num_buffer_load_x = funcSize_x / FUNCTION_LENGTH + 1;
-			
+
 			if (quiet_mode_on == 0)
 			{
 				xprintf(PSTR("funcSize_x = %u\n"), funcSize_x);
 				xprintf(PSTR("last_load_x = %u\n"), last_load_x);
-				xprintf(PSTR("num_buffer_load_x = %u\n"), num_buffer_load_x);
+				xprintf(PSTR("num_buffer_load_x = %u\n"), num_buffer_load_x);			
 			}
 			
 			default_func_x = 0;
@@ -1477,7 +1722,7 @@ void set_pos_func(uint8_t func_channel, uint8_t func_id) {
 			if (quiet_mode_on == 0){
 				xprintf(PSTR("funcSize_y = %u\n"), funcSize_y);
 				xprintf(PSTR("last_load_y = %u \n"), last_load_y);
-				xprintf(PSTR("num_buffer_load_y = %u\n"), num_buffer_load_y);				
+				xprintf(PSTR("num_buffer_load_y = %u\n"), num_buffer_load_y);			
 			}
 			
 			default_func_y = 0;
@@ -1513,7 +1758,7 @@ void set_vel_func(uint8_t func_channel, uint8_t func_id) {
     else if (func_id < 1000)
         sprintf(str, "vel0%d.fun\0", func_id);
     else
-        xputs(PSTR("function id is too big.\n"));
+            xputs(PSTR("function id is too big.\n"));
     
     switch(func_channel) {
         case 1:    //channel x
@@ -1648,13 +1893,8 @@ void update_funcCnt_x(void) {
 		return;
 	}
 	
-
-    func_read_index_x++; 
-	if (func_read_index_x >= BUFFER_LENGTH/2)
-		func_read_index_x = 0;
-		
-    func_buffer_size_x--;
 	
+	//Move mode 4 and 5 from update_display() to here since the update frequency can be changed
 	switch(x_mode){
 	
 		case 1:
@@ -1663,6 +1903,7 @@ void update_funcCnt_x(void) {
 			break;
 			
 		case 4:
+			//only use temp_ADC_val as a temp variable, just not to create an additional one		
 			temp_ADC_val = X_pos_index + function_X[func_read_index_x];
 			if (temp_ADC_val >= 0) {index_x = temp_ADC_val%x_num; }
 			if (temp_ADC_val < 0) {index_x = x_num - ((abs(temp_ADC_val))%x_num) -1;} //index_x should already smaller than x_num
@@ -1676,6 +1917,13 @@ void update_funcCnt_x(void) {
 			break;
 		
     }
+	
+	
+    func_read_index_x++; 
+	if (func_read_index_x >= BUFFER_LENGTH/2)
+		func_read_index_x = 0;
+		
+    func_buffer_size_x--;
 }
 
 void fetch_update_funcX(uint8_t fReset, uint8_t num_of_load_x) {
@@ -1687,8 +1935,9 @@ void fetch_update_funcX(uint8_t fReset, uint8_t num_of_load_x) {
 	//uint8_t funcXBuff[2*FUNCTION_LENGTH];
 	uint8_t tempBuff[FUNCTION_LENGTH];
 	uint16_t loadXBufferSize;
-				
-    //xprintf(PSTR("num_of_load_x =  %u\n"), num_of_load_x);			
+	//digitalWrite(0, HIGH);	
+			
+	//xprintf(PSTR("num_of_load_x =  %u\n"), num_of_load_x);			
 	if (func_buffer_size_x >= BUFFER_LENGTH/2){
 		xputs(PSTR("Ring buffer function_x is full\n"));
 		return;
@@ -1713,14 +1962,16 @@ void fetch_update_funcX(uint8_t fReset, uint8_t num_of_load_x) {
 		//load 100 bytes data to temBuff
 		res = f_read(&file2, tempBuff, loadXBufferSize, &cnt);
 		if (!((res == FR_OK) && (cnt == loadXBufferSize))) {
-			xprintf(PSTR("res =  %u\n"), res);
-			xputs(PSTR("Error in f_read in in fetch_update_funcX\n"));
-		}
+				xprintf(PSTR("res =  %u\n"), res);
+				xputs(PSTR("Error in f_read in in fetch_update_funcX\n"));
+			}
+
 		
 		for (j = 0; j< cnt; j+=2){
+		//for (j = 0; j< loadXBufferSize; j+=2){
 			function_X[func_write_index_x] = (uint16_t)tempBuff[j] + (uint16_t)tempBuff[j+1]*256 ; 		
 			func_write_index_x++;  
-			if (func_write_index_x >= BUFFER_LENGTH/2) //0-127
+			if (func_write_index_x >= BUFFER_LENGTH/2) //0-100
 				func_write_index_x = 0;
 				
 			func_buffer_size_x ++;  //atomic operation
@@ -1731,6 +1982,7 @@ void fetch_update_funcX(uint8_t fReset, uint8_t num_of_load_x) {
 			xprintf(PSTR("res =  %u\n"), res);
 			xputs(PSTR("Error in f_lseek in fetch_update_funcX\n"));
 	}
+	//digitalWrite(0, LOW);
 }
 
 void update_funcCnt_y(void) {
@@ -1742,11 +1994,6 @@ void update_funcCnt_y(void) {
 		xputs(PSTR("Ring buffer function_Y is empty\n"));
 		return;
 		}
-	
-    func_read_index_y++; 
-	if (func_read_index_y >= BUFFER_LENGTH/2)
-		func_read_index_y = 0;
-	func_buffer_size_y--;
     
 	switch(y_mode){
 		case 1:
@@ -1759,7 +2006,7 @@ void update_funcCnt_y(void) {
             temp_ADC_val = (Y_pos_index + function_Y[func_read_index_y]);
             if (temp_ADC_val >= 0) {index_y = temp_ADC_val%y_num; }
             if (temp_ADC_val < 0) {index_y = y_num - ((abs(temp_ADC_val))%y_num) - 1;  } //index_y should always smaller than y_num
-            frame_num = index_y*x_num + index_x;
+            frame_num = index_y*x_num + index_x;		
             break;
 	
 		case 5:   // in function DBG mode - show the function gen
@@ -1769,6 +2016,11 @@ void update_funcCnt_y(void) {
 			break;
 		
     }
+	
+	func_read_index_y++; 
+	if (func_read_index_y >= BUFFER_LENGTH/2)
+		func_read_index_y = 0;
+	func_buffer_size_y--;
 }
 
 void fetch_update_funcY(uint8_t fReset, uint8_t num_of_load_y) {
@@ -1817,12 +2069,72 @@ void fetch_update_funcY(uint8_t fReset, uint8_t num_of_load_y) {
 				func_write_index_y = 0;
 			func_buffer_size_y++;  //atomic operation
 		}
-//xprintf(PSTR("func_write_index_y =  %u\n"), func_write_index_y);			
+	//xprintf(PSTR("func_write_index_y =  %u\n"), func_write_index_y);			
 	} else {
 			xprintf(PSTR("res =  %u\n"), res);
 			xputs(PSTR("Error in f_lseek in update_funcCnt_y load next buffer\n"));
 	}
 } 
+
+void update_funcCnt_xy(void) {
+    int16_t X_dac_val, Y_dac_val;
+    int16_t temp_ADC_val;
+
+	
+	if (!func_buffer_size_x){
+		xputs(PSTR("Ring buffer function_x is empty\n"));
+		return;
+	}
+	
+	if (!func_buffer_size_y){
+		xputs(PSTR("Ring buffer function_Y is empty\n"));
+		return;
+	}
+	
+	//if sync_xy_func== 1, we preassume Y_mode is always equal x_mode are the same
+	switch(x_mode){
+	
+		case 1:
+		case 2:
+		case 3:
+			break;			
+			
+		case 4:
+			//only use temp_ADC_val as a temp variable, just not to create an additional one		
+			temp_ADC_val = X_pos_index + function_X[func_read_index_x];
+			if (temp_ADC_val >= 0) {index_x = temp_ADC_val%x_num; }
+			if (temp_ADC_val < 0) {index_x = x_num - ((abs(temp_ADC_val))%x_num) -1;} //index_x should already be smaller than x_num
+			
+			temp_ADC_val = (Y_pos_index + function_Y[func_read_index_y]);
+			if (temp_ADC_val >= 0) {index_y = temp_ADC_val%y_num; }
+			if (temp_ADC_val < 0) {index_y = y_num - ((abs(temp_ADC_val))%y_num) - 1;} //index_y should always be smaller than y_num
+			
+			frame_num = index_y*x_num + index_x;
+			break;
+			
+		case 5:   // in function DBG mode - show the function gen
+			//3277 is converted to 1V by DAC, we amplify function value so value 100 is about 1V 
+			X_dac_val = function_X[func_read_index_x]*33;
+			analogWrite(0, X_dac_val); // make it a value in the range -32767 - 32767 (-10V - 10V)
+			//3277 is converted to 1V by DAC, we amplify function value so value 100 is about 1V 
+			Y_dac_val = function_Y[func_read_index_y]*33;  
+			analogWrite(1, Y_dac_val); // make it a value in the range -32767 - 32767 (-10V - 10V)			
+			break;
+    }
+	
+	
+    func_read_index_x++; 
+	if (func_read_index_x >= BUFFER_LENGTH/2)
+		func_read_index_x = 0;
+		
+    func_buffer_size_x--;
+	
+	func_read_index_y++; 
+	if (func_read_index_y >= BUFFER_LENGTH/2)
+		func_read_index_y = 0;
+	
+	func_buffer_size_y--;
+}
 
 //synchronize the SD.mat from SD card to PC
 void dump_mat(void) {
@@ -1878,6 +2190,10 @@ ISR(PORTK_INT0_vect)
 //set these to zero so that start at beginning of function - useful for putting in a set amount of expansion
 func_read_index_x = 0;
 func_read_index_y = 0;
+
+next_block_x = 1;
+next_block_y = 1;
+
 Stop = 0;
 display_flag = 0;  //clear the display flag
 Reg_Handler(Update_display, UPDATE_RATE, 1, 1);
@@ -1890,15 +2206,12 @@ else{
 	update_funcCnt_x();//add this because the function cnt is updated without delay
 	Reg_Handler(update_funcCnt_x, functionX_rate, 4, 1);
 	}
-	
 if (default_func_y)
 	Reg_Handler(update_funcCnt_y, functionY_rate, 5, 0); 
 else{
 	update_funcCnt_y();//add this because the function cnt is updated without delay
-	Reg_Handler(update_funcCnt_y, functionY_rate, 5, 1); 			
+	Reg_Handler(update_funcCnt_y, functionY_rate, 5, 1); 					
 	}
-			
 
 xputs(PSTR("Int3 catches a rising edge trigger!\n"));
 }
-

@@ -56,6 +56,8 @@ void init_all()
   _delay_ms(100);         // Debounce ON Switch
 
   // Timer TCE1: 100Hz timer for SD Card routines
+  
+ // TCE1.CTRLA = 0x05;      // Prescaler: clk/64
   TCE1.CTRLA = 0x04;      // Prescaler: clk/8
   TCE1.PER   = 39999;     // 100Hz
   TCE1.INTCTRLA = 0x02;   // Timer overflow is a medium level interrupt

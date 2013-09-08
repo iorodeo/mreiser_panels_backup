@@ -37,12 +37,20 @@
 
 void UpdateDisplay(void);
 void DisplayChar(unsigned char c,unsigned char col);
-void StorePattern(unsigned char patternNumber, unsigned char *pattern);
-void LoadPattern_1byte(unsigned char pattern);
-void LoadPattern_3byte(unsigned char *pattern);
-void LoadPattern(unsigned char* pattern_byte);
+void StorePattern1(uint16_t frameNumber, unsigned char *pattern);
+void StorePattern3(uint16_t frameNumber, unsigned char *pattern);
+void StorePattern4(uint16_t frameNumber, unsigned char *pattern);
+void StorePattern8(uint16_t frameNumber, unsigned char *pattern);
+void StorePattern16(uint16_t frameNumber, unsigned char *pattern);
+void StorePattern24(uint16_t frameNumber, unsigned char *pattern);
+void StorePattern32(uint16_t frameNumber, unsigned char *pattern);
+void LoadPattern1(unsigned char pattern);
+void LoadPattern3(unsigned char *pattern);
+void LoadPattern4(unsigned char *pattern);
+void LoadPattern8(unsigned char* pattern_byte);
 void LoadPattern16(unsigned char *pattern);
 void LoadPattern24(unsigned char *pattern);
+void LoadPattern32(unsigned char *pattern);
 void LoadPatternEEP(unsigned char *pattern);
 void delay(unsigned short us);
 void long_delay(unsigned short ms); 
@@ -50,7 +58,7 @@ void SystemReset(void);
 void DisplayNum(void);
 void DisplayBusNum(uint8_t busNum);
 
-unsigned char Panel_ID[1] EEPROM = {0x7F}; //change the initial address to 127 instead of 0
+unsigned char Panel_ID[1] EEPROM = {0x53}; //change the initial address to 99 instead of 0
 			
 static unsigned char NUMS[10][4] EEPROM = { 	{0xFE, 0x82, 0xFE, 0x00},
 						{0x84, 0xFE, 0x80, 0x00},					
@@ -109,6 +117,7 @@ static unsigned char EEPATTERNS[12][8] EEPROM = {{0xFF, 0xFF, 0x00, 0x00, 0xFF, 
 */
 
 
-static unsigned char GS[3][8] = { { 0x00, 0x00, 0x00, 0x00, 0xFF, 0xFF, 0xFF, 0xFF},
+/*static unsigned char GS[3][8] = { { 0x00, 0x00, 0x00, 0x00, 0xFF, 0xFF, 0xFF, 0xFF},
 				  { 0x00, 0x00, 0xFF, 0xFF, 0x00, 0x00, 0xFF, 0xFF},
 				  { 0x00, 0xFF, 0x00, 0xFF, 0x00, 0xFF, 0x00, 0xFF} };
+*/

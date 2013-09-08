@@ -78,8 +78,6 @@ currentState.funcYName = 'default';
 currentState.pattName = 'default';
 
 
-
-
 % --- Executes when user attempts to close figure1.
 function figure1_CloseRequestFcn(hObject, eventdata, handles)
 %close the serial port connection
@@ -116,7 +114,7 @@ end
 
 % --- Executes on slider movement.
 function x_gain_slider_Callback(hObject, eventdata, handles)
-handles.PC.x_gain_val = round(get(hObject,'Value')*10)/10;   % this is done so only one dec place
+handles.PC.x_gain_val = round(get(hObject,'Value')*100)/10;   % this is done so only one dec place
 set(handles.x_gain_val, 'String', [num2str(handles.PC.x_gain_val) ' X']);
 guidata(hObject, handles);
 %send command to controller
@@ -141,7 +139,7 @@ end
 
 % --- Executes on slider movement.
 function x_offset_slider_Callback(hObject, eventdata, handles)
-handles.PC.x_offset_val = round(get(hObject,'Value')*10)/10;
+handles.PC.x_offset_val = round(get(hObject,'Value')*200)/10;
 set(handles.x_offset_val, 'String', [num2str(handles.PC.x_offset_val) ' V']);
 guidata(hObject, handles);
 %send command to controller
@@ -167,7 +165,7 @@ end
 % --- Executes on slider movement.
 function y_gain_slider_Callback(hObject, eventdata, handles)
 
-handles.PC.y_gain_val = round(get(hObject,'Value')*10)/10;
+handles.PC.y_gain_val = round(get(hObject,'Value')*100)/10;
 set(handles.y_gain_val, 'String', [num2str(handles.PC.y_gain_val) ' X']);
 guidata(hObject, handles);
 %send command to controller
@@ -193,7 +191,7 @@ end
 
 % --- Executes on slider movement.
 function y_offset_slider_Callback(hObject, eventdata, handles)
-handles.PC.y_offset_val = round(get(hObject,'Value')*10)/10;
+handles.PC.y_offset_val = round(get(hObject,'Value')*200)/10;
 set(handles.y_offset_val, 'String', [num2str(handles.PC.y_offset_val) ' V']);
 guidata(hObject, handles);
 %send command to controller
@@ -565,10 +563,10 @@ update_status_display(['Pattern ' num2str(Pattern_ID) ' is the current pattern']
 function Send_Gain_Bias(handles)
 % this function sends out the new gain and bias values to the controller
 Panel_com('stop')
-gain_x = round(100*handles.PC.x_gain_val/(handles.PC.x_gain_max));
-gain_y = round(100*handles.PC.y_gain_val/(handles.PC.y_gain_max));
-bias_x = round(100*handles.PC.x_offset_val/(handles.PC.x_offset_max));
-bias_y = round(100*handles.PC.y_offset_val/(handles.PC.y_offset_max));
+gain_x = round(10*handles.PC.x_gain_val/(handles.PC.x_gain_max));
+gain_y = round(10*handles.PC.y_gain_val/(handles.PC.y_gain_max));
+bias_x = round(5*handles.PC.x_offset_val/(handles.PC.x_offset_max));
+bias_y = round(5*handles.PC.y_offset_val/(handles.PC.y_offset_max));
 Panel_com('send_gain_bias', [gain_x, bias_x, gain_y, bias_y]);
 update_status_display(['Sending: gain_x = ' num2str(gain_x) ', bias_x = ' num2str(bias_x) ...
     ', gain_y = ' num2str(gain_y) ', bias_y = ' num2str(bias_y)]);
@@ -592,7 +590,7 @@ Panel_com('led_tog');
 
 % --------------------------------------------------------------------
 function menu_set_Pat_ID_Callback(hObject, eventdata, handles)
-global currentState newString SD;
+global currentState SD;
 
 if SD.pattern.num_patterns ~=0
     setPattern;

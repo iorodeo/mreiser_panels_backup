@@ -73,7 +73,7 @@ guidata(hObject, handles);
 
 function button_add_function_Callback(hObject, eventdata, handles)
 % --- Executes on button press in button_add_function.
-load('Pcontol_paths.mat');
+load('Pcontrol_paths.mat');
 cd(function_path)
 [FileName,PathName] = uigetfile('*function*.mat','Select a FUNCTION file');
 % returns a 0 if cancel is pressed

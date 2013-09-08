@@ -15,6 +15,7 @@ else
     
     temp_cell_array = get(handles.status_display, 'String');
     
+    disp(new_string);
     for i = 1:rowNum
         if (i == 1)
             temp_cell_array{end+1} = [' > ' new_string];

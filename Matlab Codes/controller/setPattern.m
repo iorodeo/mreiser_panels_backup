@@ -22,7 +22,7 @@ function varargout = setPattern(varargin)
 
 % Edit the above text to modify the response to help setAPattern
 
-% Last Modified by GUIDE v2.5 28-May-2010 15:38:59
+% Last Modified by GUIDE v2.5 24-Jul-2012 11:14:44
 % Begin initialization code - DO NOT EDIT
 gui_Singleton = 1;
 gui_State = struct('gui_Name',       mfilename, ...
@@ -161,3 +161,18 @@ function setAPattern_ButtonDownFcn(hObject, eventdata, handles)
 % hObject    handle to setAPattern (see GCBO)
 % eventdata  reserved - to be defined in a future version of MATLAB
 % handles    structure with handles and user data (see GUIDATA)
+
+
+% --- Executes on button press in loadPattern2Panels.
+function loadPattern2Panels_Callback(hObject, eventdata, handles)
+% hObject    handle to loadPattern2Panels (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
+global currentState SD;
+if SD.pattern.num_patterns ~=0
+    currentState.chosePat =1;
+    currentState.closeSetPat = 1;
+    pattID = currentState.pattID;
+    Panel_com('load_pattern_2panels', [pattID]);
+    close(gcf);
+end

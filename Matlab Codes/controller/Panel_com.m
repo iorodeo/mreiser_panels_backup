@@ -156,8 +156,8 @@ switch lower(command)
         send_serial( char([2 2 argument(1)]));
         
     case 'set_pattern_id'
-        if ((~isequal(length(argument),1))||(~isnumeric(argument))||(argument(1) >99)||(argument(1) <= 0))
-            error('Pattern ID command requires 1 numerical argument that is between 1 and 99');
+        if ((~isequal(length(argument),1))||(~isnumeric(argument))||(argument(1) >255)||(argument(1) <= 0))
+            error('Pattern ID command requires 1 numerical argument that is between 1 and 255');
         end
         % panel ID:  0x03, Panel_ID
         send_serial( char([2 3 argument(1)]));
@@ -214,7 +214,21 @@ switch lower(command)
         end
         
         send_serial( char([2 hex2dec('10') argument(1)]));
-       
+        
+    case 'load_pattern_2panels' 
+        global SD;
+        if ((~isequal(length(argument),1))||(~isnumeric(argument))||(argument(1) >99)||(argument(1) <= 0))
+            error('Pattern ID command requires 1 numerical argument that is between 1 and 99');
+        end
+        % panel ID:  0x03, Panel_ID
+        bytesPerFramePerPanel = SD.pattern.frame_size(argument(1))/SD.pattern.num_panels(argument(1));
+        bytesPerPatternPerPanel = bytesPerFramePerPanel*SD.pattern.x_num(argument(1))*SD.pattern.y_num(argument(1));
+        
+        if bytesPerPatternPerPanel <= 800
+            send_serial( char([2 hex2dec('11') argument(1)]));
+        else
+            error('The size of pattern %d is bigger than 800 bytes, it cannot be loaded to the panels. Please use set_pattern_id instead.', argument(1));
+        end
 %     case 'set_max_adc23'
 %         
 %         if ((~isequal(length(argument),1))||(~isnumeric(argument))||(argument(1) >10)||(argument(1) <= 0))
@@ -261,15 +275,15 @@ switch lower(command)
         send_serial( char([3 hex2dec('20') argument(1) argument(2)]));
         
     case 'set_funcx_freq'
-        if (~isequal(length(argument),1)||(~isnumeric(argument))||(argument(1) > 500)||(argument(1) < 0))
-            error('function X update rate requires 1 argument that is a number between 0 and 500');
+        if (~isequal(length(argument),1)||(~isnumeric(argument))||(argument(1) > 2000)||(argument(1) < 0))
+            error('function X update rate requires 1 argument that is a number between 0 and 2000');
         end
         
         send_serial( char([3 hex2dec('25') dec2char(argument(1),2)]));
         
     case 'set_funcy_freq'
-        if (~isequal(length(argument),1)||(~isnumeric(argument))||(argument(1) > 500)||(argument(1) < 0))
-            error('function Y update rate requires 1 argument that is a number between 0 and 500');
+        if (~isequal(length(argument),1)||(~isnumeric(argument))||(argument(1) > 2000)||(argument(1) < 0))
+            error('function Y update rate requires 1 argument that is a number between 0 and 2000');
         end
         
         send_serial( char([3 hex2dec('30') dec2char(argument(1),2)]));
@@ -310,15 +324,17 @@ switch lower(command)
         %subtract -1 from each argument
         % beacause in matlab use 1 as start index, and controller uses 0
         send_serial([5 hex2dec('70') dec2char(argument(1)-1,2) dec2char(argument(2)-1,2)]);
-        
+
+% nine byte commands:
     case 'send_gain_bias'
-        % 5 bytes to set gain and bias values: 0x71, then 1 byte each for gain_x, bias_x, gain_y, bias_y
+        % 9 bytes to set gain and bias values: 0x01, then 2 byte each for gain_x, bias_x, gain_y, bias_y
         if (~isequal(length(argument),4)||(~isnumeric(argument)))
             error('gain & bias setting command requires 4 numerical arguments');
         end
         %Note: these are all signed arguments, so we need to convert to 2's complement if necessary
-        send_serial( [5 hex2dec('71') signed_byte_to_char(argument)]);
-        
+        send_serial( [9 hex2dec('01') signed_16Bit_to_char(argument(1)), signed_16Bit_to_char(argument(2)), signed_16Bit_to_char(argument(3)), signed_16Bit_to_char(argument(4))]);
+
+        %send_serial([5 hex2dec('71') signed_byte_to_char(argument)]);
         %compress the 1000 0/1 laser pattern into a 125 bytes data
         %Panel_com('send_laser_pattern',pattern);
         %argument pattern is a binary vector with length from 1 to 1000.

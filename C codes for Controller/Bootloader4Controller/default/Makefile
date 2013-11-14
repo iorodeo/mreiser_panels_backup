@@ -2,32 +2,47 @@
 # Makefile for the project BootloaderMkII_gcc
 ###############################################################################
 
-## General Flags
-PROJECT = BootloaderMkII_gcc
-MCU = atxmega128a1
-TARGET = BootloaderMkII_gcc.elf
-CC = avr-gcc
+## General Flags.
+TARGET           = BootloaderMkII_gcc
+CSRC             = ../eeprom_driver.c ../main.c ../serial.c
+ASRC             = ../sp_driver.S
+MCU_TARGET       = atxmega128a1
+F_CPU            = 2000000
+OPTIMIZE         = 
+DEFS             = -DF_CPU=$(F_CPU)UL
+LIBS             =
+FLASH_SERIALPORT = /dev/ttyUSB0
+FLASH_BAUDRATE   = 115200
 
-## Options common to compile, link and assembly rules
-COMMON = -mmcu=$(MCU)
+
+## Programs.
+CC             = avr-gcc
+OBJCOPY        = avr-objcopy
+OBJDUMP        = avr-objdump
+SIZE           = avr-size
+
+## Options common to compile, link and assembly rules.
+COMMON = -mmcu=$(MCU_TARGET)
 
 ## Compile options common for all C compilation units.
-CFLAGS = $(COMMON)
-CFLAGS += -Wall -gdwarf-2 -std=gnu99       -DF_CPU=2000000UL -Os -funsigned-char -funsigned-bitfields -fpack-struct -fshort-enums
+CFLAGS = $(COMMON) $(OPTIMIZE)
+CFLAGS += -Wall -gdwarf-2 -std=gnu99 -Os -funsigned-char -funsigned-bitfields -fpack-struct -fshort-enums $(DEFS)
+CFLAGS += -I/usr/lib/avr/include  -I/home/ssafarik/src.hg/panels/C\ codes\ for\ Controller/Bootloader4Controller
 CFLAGS += -MD -MP -MT $(*F).o -MF dep/$(@F).d 
 
-## Assembly specific flags
+## Assembly specific flags.
 ASMFLAGS = $(COMMON)
 ASMFLAGS += $(CFLAGS)
 ASMFLAGS += -x assembler-with-cpp -Wa,-gdwarf2
 
-## Linker flags
+## Linker flags.
 LDFLAGS = $(COMMON)
-LDFLAGS +=  -Wl,-Map=BootloaderMkII_gcc.map
+LDFLAGS +=  -Wl,-Map=$(TARGET).map
 LDFLAGS += -Wl,-section-start=.text=0x20000
 
 
-## Intel Hex file production flags
+
+## Intel Hex file production flags.
 HEX_FLASH_FLAGS = -R .eeprom -R .fuse -R .lock -R .signature
 
 HEX_EEPROM_FLAGS = -j .eeprom
@@ -35,49 +50,46 @@ HEX_EEPROM_FLAGS += --set-section-flags=.eeprom="alloc,load"
 HEX_EEPROM_FLAGS += --change-section-lma .eeprom=0 --no-change-warnings
 
 
-## Objects that must be built in order to link
-OBJECTS = eeprom_driver.o main.o serial.o sp_driver.o 
+## Objects that must be built in order to link.
+OBJ = $(CSRC:.c=.o) $(ASRC:.S=.o)
 
-## Objects explicitly added by the user
-LINKONLYOBJECTS = 
 
 ## Build
-all: $(TARGET) BootloaderMkII_gcc.hex BootloaderMkII_gcc.eep BootloaderMkII_gcc.lss size
+all: $(TARGET).elf text $(TARGET).eep $(TARGET).lss size
 
 ## Compile
-sp_driver.o: ../sp_driver.s
-	$(CC) $(INCLUDES) $(ASMFLAGS) -c  $<
+$(TARGET).elf: $(OBJ)
+	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ $^ $(LIBS)
 
-eeprom_driver.o: ../eeprom_driver.c
-	$(CC) $(INCLUDES) $(CFLAGS) -c  $<
+%.o: %.S
+	$(CC) -c $(ASMFLAGS) $< -o $@
 
-main.o: ../main.c
-	$(CC) $(INCLUDES) $(CFLAGS) -c  $<
 
-serial.o: ../serial.c
-	$(CC) $(INCLUDES) $(CFLAGS) -c  $<
+%.eep: %.elf
+	$(OBJCOPY) $(HEX_EEPROM_FLAGS) -O ihex $< $@ || exit 0
 
-##Link
-$(TARGET): $(OBJECTS)
-	 $(CC) $(LDFLAGS) $(OBJECTS) $(LINKONLYOBJECTS) $(LIBDIRS) $(LIBS) -o $(TARGET)
+%.lss: %.elf
+	$(OBJDUMP) -h -S $< > $@
 
-%.hex: $(TARGET)
-	avr-objcopy -O ihex $(HEX_FLASH_FLAGS)  $< $@
+size: ${TARGET}.hex
+	@$(SIZE) -C --mcu=${MCU_TARGET} ${TARGET}.hex
+    
+    
+text: hex
+hex:  $(TARGET).hex
 
-%.eep: $(TARGET)
-	-avr-objcopy $(HEX_EEPROM_FLAGS) -O ihex $< $@ || exit 0
+%.hex: %.elf
+	$(OBJCOPY) -O ihex $(HEX_FLASH_FLAGS)  $< $@
 
-%.lss: $(TARGET)
-	avr-objdump -h -S $< > $@
-
-size: ${TARGET}
-	@echo
-	@avr-size -C --mcu=${MCU} ${TARGET}
 
 ## Clean target
-.PHONY: clean
+.PHONY: clean flash
 clean:
-	-rm -rf $(OBJECTS) BootloaderMkII_gcc.elf dep/* BootloaderMkII_gcc.hex BootloaderMkII_gcc.eep BootloaderMkII_gcc.lss BootloaderMkII_gcc.map
+	-rm -rf $(OBJ) $(TARGET).elf dep/* $(TARGET).hex $(TARGET).eep $(TARGET).lss $(TARGET).map
+
+
+flash:
+	avrdude -p $(MCU_TARGET) -P $(FLASH_SERIALPORT) -b $(FLASH_BAUDRATE) -c avr109 -e -U flash:w:$(TARGET).hex
 
 
 ## Other dependencies

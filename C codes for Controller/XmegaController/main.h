@@ -1,13 +1,13 @@
 //in one bytes because function_X and function_Y are int8_t
-//In the old system OVERFLOW_RATE = 16MHz/8(prescaler)/256(timer0)
-//In the new system OVERFLOW_RATE = 32MHz/8(prescaler)/512(timerE)
-//JL03092010 increase OVERFLOW_RATE 4 times in order to get a higher resolution clock for the handlers
-//#define OVERFLOW_RATE 2000000/256
-#define BUFFER_LENGTH 200 //ringbuffer size in byte
-#define FUNCTION_LENGTH  100 //index of the function ringbuffer, or size of one function buffer write in buffer
-#define OVERFLOW_RATE 8000000/256
-#define UPDATE_RATE OVERFLOW_RATE/400 
-#define FUNCTION_RATE OVERFLOW_RATE/50
+#define FUNCTION_LENGTH 100
+//In the old system OVERFLOW_PERIOD = 16MHz/8(prescaler)/256(timer0)
+//In the new system OVERFLOW_PERIOD = 32MHz/8(prescaler)/512(timerE)
+//JL03092010 increase OVERFLOW_PERIOD 4 times in order to get a higher resolution clock for the handlers
+//#define OVERFLOW_PERIOD 2000000/256
+#define RINGBUFFER_LENGTH (FUNCTION_LENGTH*2) //ringbuffer size in bytes
+#define OVERFLOW_PERIOD 8000000/256
+#define UPDATE_PERIOD OVERFLOW_PERIOD/400
+#define FUNCTION_PERIOD OVERFLOW_PERIOD/50
 
 
 #define BAUDRATE	400000
@@ -31,12 +31,12 @@ void handle_message_length_52(uint8_t *msg_buffer);
 
 
 //routines for updating display, computing new pattern indices
-void Update_display(void);
+void update_display(void);
 void increment_index_x(void);
 void increment_index_y(void);
 void decrement_index_x(void);
 void decrement_index_y(void);
-void fetch_display_frame(uint16_t f_num, uint16_t, uint16_t);
+void fetch_and_display_frame(FIL *pFile, uint16_t f_num, uint16_t, uint16_t);
 void display_preload_frame(uint16_t f_num, uint16_t, uint16_t);
 void update_ANOUT(void);
 void update_funcCnt_x(void);
@@ -55,17 +55,17 @@ void i2cMasterSend(uint8_t addr, uint8_t len, uint8_t *data);
 void set_vel_func(uint8_t func_channel, uint8_t func_id);
 void set_pos_func(uint8_t func_channel, uint8_t func_id);
 void set_default_func(uint8_t func_channel);
+
 void loadPattern2Panels(uint8_t pat_num);
 void display_dumped_frame (uint8_t *msg_buffer);
 
 void dump_mat(void);
-void fetch_update_funcX(uint8_t fReset, uint8_t); 
-void fetch_update_funcY(uint8_t fReset, uint8_t);
+void fetch_update_funcX(FIL *pFile, uint8_t fReset, uint8_t);
+void fetch_update_funcY(FIL *pFile, uint8_t fReset, uint8_t);
 uint8_t difference(uint8_t write_index, uint8_t read_index);
 
 unsigned char work_mode[1] EEPROM = {0xff};
 unsigned char arena_config[129] EEPROM;
-
 static uint8_t RESET[2] = {0x00, 0x01};
 static uint8_t DISPLAY[2] = {0x00, 0x02};
 

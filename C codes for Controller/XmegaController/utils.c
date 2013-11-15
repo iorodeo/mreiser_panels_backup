@@ -40,10 +40,11 @@ void init_all()
 
 
  // set digital I/O signals to outputs
-  digitalMode(0, OUTPUT);     //used to trigger laser
-  digitalMode(1, OUTPUT);     //used as a sign for the start and end of fetch_display_frame function
-  digitalMode(2, OUTPUT);     //used to trigger camera
-  digitalMode(3, INPUT);      //Used to detect external trigger signal 
+  digitalMode(DIO_0, OUTPUT);     //used to trigger laser
+  digitalMode(DIO_1, OUTPUT);     //used as a sign for the start and end of fetch_display_frame function
+  digitalMode(DIO_2, OUTPUT);     //used to trigger camera
+  digitalMode(DIO_3, INPUT);      //Used to detect external trigger signal
+
   PORTK.PIN3CTRL = 0x01;      //INT3 senses rising edge
   PORTK.INT0MASK = 0x00;      //disable Int3 as source for port interrupt 0x00, enable it with 0x08.
   PORTK.INTCTRL = 0x02;       //Set Int3 INT0 Level medium   

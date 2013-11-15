@@ -1765,33 +1765,34 @@ void set_pos_func(uint8_t func_channel, uint8_t id_func)
                     //xprintf(PSTR("fun X: %s\n function X size: %lu bytes\n"),
                     //        func_name_x, funcSize_x);
                     
+                    last_load_x = funcSize_x % nbytesBuffer;
+
+                    if (last_load_x == 0)
+                        num_buf_load_x = funcSize_x / nbytesBuffer;
+                    else
+                        num_buf_load_x = funcSize_x / nbytesBuffer + 1;
+
+                    if (!g_quiet_mode)
+                    {
+                        xprintf(PSTR("funcSize_x = %u\n"), funcSize_x);
+                        xprintf(PSTR("last_load_x = %u\n"), last_load_x);
+                        xprintf(PSTR("num_buf_load_x = %u\n"), num_buf_load_x);
+                    }
+
+                    g_b_default_func_x = FALSE;
+
+                    //update the function buffer
+                    fetch_and_update_func_x(pFile, TRUE, 0);
+
                 }
                 else
 					xputs(PSTR("Error reading file in set_pos_func(): X\n"));
 
+                f_close(pFile);
             }
             else
 				xputs(PSTR("Error opening file in set_pos_func(): X.\n"));
                 
-            last_load_x = funcSize_x % nbytesBuffer;
-            
-            if (last_load_x == 0)
-                num_buf_load_x = funcSize_x / nbytesBuffer;
-            else
-                num_buf_load_x = funcSize_x / nbytesBuffer + 1;
-
-            if (!g_quiet_mode)
-            {
-                xprintf(PSTR("funcSize_x = %u\n"), funcSize_x);
-                xprintf(PSTR("last_load_x = %u\n"), last_load_x);
-                xprintf(PSTR("num_buf_load_x = %u\n"), num_buf_load_x);
-            }
-            
-            g_b_default_func_x = FALSE;
-            
-            //update the function buffer
-            fetch_and_update_func_x(pFile, TRUE, 0);
-            
             //Reg_Handler(update_funcCnt_x, g_period_func_x, IRQ_INCREMENT_FUNC_X, TRUE);//enable ISR
             break;
             
@@ -1814,6 +1815,7 @@ void set_pos_func(uint8_t func_channel, uint8_t id_func)
                     func_name_len = bufPosFunc[4];
                     
                     g_id_func_y = id_func;
+                    g_b_default_func_y = FALSE;
                     
                     g_b_running = FALSE;
                     g_display_count = 0;  //clear the display count
@@ -1822,32 +1824,31 @@ void set_pos_func(uint8_t func_channel, uint8_t id_func)
                     //xprintf(PSTR("fun Y: %s\n function Y size: %lu bytes\n"),
                     //       func_name_y, funcSize_y);
                     
+                    last_load_y = funcSize_y % nbytesBuffer;
+
+                    if (last_load_y == 0)
+                        num_buf_load_y = funcSize_y / nbytesBuffer;
+                    else
+                        num_buf_load_y = funcSize_y / nbytesBuffer + 1;
+
+                    if (!g_quiet_mode)
+                    {
+                        xprintf(PSTR("funcSize_y = %u\n"), funcSize_y);
+                        xprintf(PSTR("last_load_y = %u \n"), last_load_y);
+                        xprintf(PSTR("num_buf_load_y = %u\n"), num_buf_load_y);
+                    }
+
+                    //update the function buffer
+                    fetch_and_update_func_y(pFile, TRUE, 0);
+
                 }
                 else
 					xputs(PSTR("Error reading file in set_pos_func(): Y.\n"));
 
+                f_close(pFile);
             }
             else
 				xputs(PSTR("Error opening file in set_pos_func(): Y.\n"));
-            
-            last_load_y = funcSize_y % nbytesBuffer;
-            
-            if (last_load_y == 0)
-                num_buf_load_y = funcSize_y / nbytesBuffer;
-            else
-                num_buf_load_y = funcSize_y / nbytesBuffer + 1;
-            
-            if (!g_quiet_mode)
-            {
-                xprintf(PSTR("funcSize_y = %u\n"), funcSize_y);
-                xprintf(PSTR("last_load_y = %u \n"), last_load_y);
-                xprintf(PSTR("num_buf_load_y = %u\n"), num_buf_load_y);
-            }
-            
-            g_b_default_func_y = FALSE;
-            
-            //update the function buffer
-            fetch_and_update_func_y(pFile, TRUE, 0);
             
             //Reg_Handler(update_funcCnt_y, g_period_func_y, IRQ_INCREMENT_FUNC_Y, TRUE);//enable ISR
             break;
@@ -1856,9 +1857,6 @@ void set_pos_func(uint8_t func_channel, uint8_t id_func)
                 xputs(PSTR("Error: channel must be 1 for x, or 2 for y.\n"));
             break;
     }
-
-    if (frOpen==FR_OK)
-    	f_close(pFile);
 }
 
 
@@ -1910,35 +1908,34 @@ void set_vel_func(uint8_t func_channel, uint8_t id_func)
                     if (!g_quiet_mode)
                         xprintf(PSTR("Setting velocity function  %u for X\n"), id_func);
                     
+                    if (!g_quiet_mode)
+                    {
+                        xprintf(PSTR("funcSize_x = %u\n"), funcSize_x);
+                        last_load_x = funcSize_x % FUNCTION_LENGTH;
+                        xprintf(PSTR("last_load_x = %u\n"), last_load_x);
+                        if(!last_load_x)
+                        {
+                            num_buf_load_x = funcSize_x/FUNCTION_LENGTH;
+                            xprintf(PSTR("num_buf_load_x = %u\n"), num_buf_load_x);
+                        }
+                        else
+                        {
+                            num_buf_load_x = funcSize_x / FUNCTION_LENGTH + 1;
+                            xprintf(PSTR("num_buf_load_x = %u\n"), num_buf_load_x);
+                        }
+                    }
+
+                    g_b_default_func_x = FALSE;
+
+                    // Reset the function, and read the first block of bytes into the function buffer.
+                    fetch_and_update_func_x(pFile, TRUE, 0);
+
                 }
                 else
                 	xputs(PSTR("Error reading file in set_vel_func(): X.\n"));
-
             }
             else
 				xputs(PSTR("Error opening file in set_vel_func(): X.\n"));
-
-            if (!g_quiet_mode)
-            {
-                xprintf(PSTR("funcSize_x = %u\n"), funcSize_x);
-                last_load_x = funcSize_x % FUNCTION_LENGTH;
-                xprintf(PSTR("last_load_x = %u\n"), last_load_x);
-                if(!last_load_x)
-                {
-                    num_buf_load_x = funcSize_x/FUNCTION_LENGTH;
-                    xprintf(PSTR("num_buf_load_x = %u\n"), num_buf_load_x);
-                }
-                else
-                {
-                    num_buf_load_x = funcSize_x / FUNCTION_LENGTH + 1;
-                    xprintf(PSTR("num_buf_load_x = %u\n"), num_buf_load_x);
-                }
-            }
-
-            g_b_default_func_x = FALSE;
-
-            // Reset the function, and read the first block of bytes into the function buffer.
-            fetch_and_update_func_x(pFile, TRUE, 0);
 
             //Reg_Handler(update_funcCnt_x, g_period_func_x, IRQ_INCREMENT_FUNC_X, TRUE); //enable ISR
             break;
@@ -1970,36 +1967,34 @@ void set_vel_func(uint8_t func_channel, uint8_t id_func)
                     if (!g_quiet_mode)
                         xprintf(PSTR("Setting velocity function %u for Y\n"), id_func);
                     
+                    if (!g_quiet_mode)
+                    {
+                        xprintf(PSTR("funcSize_y = %u\n"), funcSize_y);
+                        last_load_y = funcSize_y % FUNCTION_LENGTH;
+                        xprintf(PSTR("last_load_y = %u\n"), last_load_y);
+                        if (last_load_y == 0)
+                        {
+                            num_buf_load_y = funcSize_y / FUNCTION_LENGTH;
+                            xprintf(PSTR("num_buf_load_y = %u\n"), num_buf_load_y);
+                        }
+                        else
+                        {
+                            num_buf_load_y = funcSize_y / FUNCTION_LENGTH + 1;
+                            xprintf(PSTR("num_buf_load_y = %u\n"), num_buf_load_y);
+                        }
+                    }
+
+                    g_b_default_func_y = FALSE;
+
+                    // Reset the function, and read the first block of bytes into the function buffer.
+                    fetch_and_update_func_y(pFile, TRUE, 0);
+
                 }
                 else
 					xputs(PSTR("Error reading file in set_vel_func(): Y.\n"));
-
             }
             else
 				xputs(PSTR("Error opening file in set_vel_func(): Y.\n"));
-        
-            
-            if (!g_quiet_mode)
-            {
-                xprintf(PSTR("funcSize_y = %u\n"), funcSize_y);
-                last_load_y = funcSize_y % FUNCTION_LENGTH;
-                xprintf(PSTR("last_load_y = %u\n"), last_load_y);
-                if (last_load_y == 0)
-                {
-                    num_buf_load_y = funcSize_y / FUNCTION_LENGTH;
-                    xprintf(PSTR("num_buf_load_y = %u\n"), num_buf_load_y);
-                }
-                else
-                {
-                    num_buf_load_y = funcSize_y / FUNCTION_LENGTH + 1;
-                    xprintf(PSTR("num_buf_load_y = %u\n"), num_buf_load_y);
-                }
-            }
-            
-            g_b_default_func_y = FALSE;
-            
-            // Reset the function, and read the first block of bytes into the function buffer.
-            fetch_and_update_func_y(pFile, TRUE, 0);
             
             //Reg_Handler(update_funcCnt_y, g_period_func_y, IRQ_INCREMENT_FUNC_Y, TRUE); //enable ISR
             break;

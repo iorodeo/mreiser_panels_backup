@@ -36,6 +36,19 @@
 #define MSB(x)	(((x) & 0xFF00) >> 8)
 #define LSB(x)	(((x) & 0x00FF))
 
+
+#define DIO_0		0
+#define DIO_1		1
+#define DIO_2		2
+#define DIO_3		3
+
+#define DIO_LASER			DIO_0
+#define DIO_FRAMEBUSY		DIO_1
+#define DIO_TRIGGEROUT		DIO_2
+#define DIO_TRIGGER			DIO_3
+
+
+
 // Define some AD7328 bitfield settings.
 
 #define ADC_READ			0x0000

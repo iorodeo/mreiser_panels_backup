@@ -1,18 +1,18 @@
 //in one bytes because function_X and function_Y are int8_t
-#define FUNCTION_LENGTH 100
+#define NBYTES_HEADER	  512
+#define RINGBUFFER_LENGTH 100
+
 //In the old system OVERFLOW_PERIOD = 16MHz/8(prescaler)/256(timer0)
 //In the new system OVERFLOW_PERIOD = 32MHz/8(prescaler)/512(timerE)
 //JL03092010 increase OVERFLOW_PERIOD 4 times in order to get a higher resolution clock for the handlers
 //#define OVERFLOW_PERIOD 2000000/256
-#define RINGBUFFER_LENGTH (FUNCTION_LENGTH*2) //ringbuffer size in bytes
-#define OVERFLOW_PERIOD 8000000/256
-#define UPDATE_PERIOD OVERFLOW_PERIOD/400
-#define FUNCTION_PERIOD OVERFLOW_PERIOD/50
+#define OVERFLOW_PERIOD   8000000/256
+#define UPDATE_PERIOD     OVERFLOW_PERIOD/400
+#define FUNCTION_PERIOD   OVERFLOW_PERIOD/50
 
 
-#define BAUDRATE	400000
-#define TWI_BAUDSETTING TWI_BAUD(F_CPU, BAUDRATE)
-
+#define BAUDRATE	      400000
+#define TWI_BAUDSETTING   TWI_BAUD(F_CPU, BAUDRATE)
 #define TWI_BUFFER_LENGTH HEADER_SIZE+PAGE_SIZE
 
 #define EEPROM __attribute__((section(".eeprom")))
@@ -56,8 +56,8 @@ void set_default_func(uint8_t func_channel);
 void display_dumped_frame (uint8_t *msg_buffer);
 
 void dump_mat(void);
-void fetch_update_funcX(FIL *pFile, uint8_t fReset, uint8_t);
-void fetch_update_funcY(FIL *pFile, uint8_t fReset, uint8_t);
+void fetch_block_func_x(FIL *pFile, uint8_t fReset, uint8_t);
+void fetch_block_func_y(FIL *pFile, uint8_t fReset, uint8_t);
 
 unsigned char work_mode[1] EEPROM = {0xff};
 unsigned char arena_config[129] EEPROM;

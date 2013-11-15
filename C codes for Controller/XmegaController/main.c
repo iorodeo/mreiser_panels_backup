@@ -17,20 +17,21 @@
 #define TRUE	(!FALSE)
 
 // Slot numbers of the functions called by the timer interrupt, one function per slot.
-#define IRQ_TOGGLE_TRIGGER		0
-#define IRQ_UPDATE_DISPLAY		1
-#define IRQ_INCREMENT_INDEX_X	2
-#define IRQ_INCREMENT_INDEX_Y	3
-#define IRQ_INCREMENT_FUNC_X	4
-#define IRQ_INCREMENT_FUNC_Y	5
+#define ISR_TOGGLE_TRIGGER		0
+#define ISR_UPDATE_DISPLAY		1
+#define ISR_INCREMENT_INDEX_X	2
+#define ISR_INCREMENT_INDEX_Y	3
+#define ISR_INCREMENT_FUNC_X	4
+#define ISR_INCREMENT_FUNC_Y	5
 
 
 //globals - for now! - try to cut down on these
 volatile uint8_t  g_b_running = FALSE;
+uint8_t           g_b_laseractive = FALSE;
+
 uint8_t           g_display_count = 0;
-uint8_t           Laser_active = FALSE;
-uint16_t          resolution_x = 4095;
-uint16_t          resolution_y = 4095;
+uint16_t          g_resolution_x = 4095;
+uint16_t          g_resolution_y = 4095;
 
 uint16_t          g_x_max, g_y_max;  //the max index for x and y
 volatile uint16_t g_x, g_y; // the current index of x and y
@@ -40,18 +41,23 @@ uint8_t           g_num_panels = 0;
 uint8_t           g_mode_x, g_mode_y;
 volatile uint16_t g_index_frame = 0;
 
-uint32_t          funcSize_x = RINGBUFFER_LENGTH; //function file size
-uint32_t          funcSize_y = RINGBUFFER_LENGTH;
-int16_t           g_buf_func_x[FUNCTION_LENGTH];  //ring buffer
-int16_t           g_buf_func_y[FUNCTION_LENGTH];  //ring buffer
-volatile uint8_t  g_index_func_x_read = 0;  //read index for the ring buffer g_buf_func_x[FUNCTION_LENGTH]
-volatile uint8_t  g_index_func_y_read = 0;  //read index for the ring buffer g_buf_func_y[FUNCTION_LENGTH]
-volatile uint8_t  g_index_func_x_write = 0; //write index for the ring buffer g_buf_func_x[FUNCTION_LENGTH]
-volatile uint8_t  g_index_func_y_write = 0; //write index for the ring buffer g_buf_func_y[FUNCTION_LENGTH]
-volatile uint8_t  g_filllevel_buf_func_x = 0;  //share between main function and update_funcCnt_x
-volatile uint8_t  g_filllevel_buf_func_y = 0;  //share between main function and update_funcCnt_y
-volatile uint8_t  next_block_x = 1;
-volatile uint8_t  next_block_y = 1;
+uint32_t          g_nbytes_func_x = RINGBUFFER_LENGTH; //function file size
+uint32_t          g_nbytes_func_y = RINGBUFFER_LENGTH;
+int16_t           g_buf_func_x[RINGBUFFER_LENGTH];  // Ring buffer for function data.
+int16_t           g_buf_func_y[RINGBUFFER_LENGTH];
+volatile uint8_t  g_index_func_x_read = 0;  // Read index for the ring buffer g_buf_func_x[RINGBUFFER_LENGTH]
+volatile uint8_t  g_index_func_y_read = 0;
+volatile uint8_t  g_index_func_x_write = 0; // Write index for the ring buffer g_buf_func_x[RINGBUFFER_LENGTH]
+volatile uint8_t  g_index_func_y_write = 0;
+volatile uint8_t  g_filllevel_buf_func_x = 0;  // How far ahead of the read index is the write index.
+volatile uint8_t  g_filllevel_buf_func_y = 0;
+
+volatile uint8_t  g_iblock_func_x = 1;			// Index of the current block.
+volatile uint8_t  g_iblock_func_y = 1;
+uint16_t          g_nblocks_func_x = 1;			// Total number of blocks.
+uint16_t          g_nblocks_func_y = 1;
+uint16_t          g_nbytes_final_block_x = 0;	// Length of the final block.
+uint16_t          g_nbytes_final_block_y = 0;
 
 uint16_t          g_id_func_x = 0;
 uint16_t          g_id_func_y = 0;
@@ -60,12 +66,12 @@ volatile uint8_t  g_b_default_func_y = TRUE;
 uint16_t          g_period_func_x = FUNCTION_PERIOD;
 uint16_t          g_period_func_y = FUNCTION_PERIOD;
 
-uint8_t           laserPattern[125];
+uint8_t           g_laserpattern[125];
 int8_t            g_gain_x, g_gain_y;
 int8_t            g_bias_x, g_bias_y;
 int8_t            g_xrate_greater_yrate=FALSE;
 int16_t           X_pos_index, Y_pos_index;
-uint16_t          trigger_rate = 200;
+uint16_t          g_trigger_rate = 200;
 
 
 FIL               file1, file2, file3, file4;       // File objects
@@ -76,14 +82,10 @@ FIL               file1, file2, file3, file4;       // File objects
 
 //max frame size = 32bpp * 4rows * 12col = 1536
 
-uint8_t  adrMap[129]; // panel twi address mapping, we can have same address in different channels
+uint8_t  g_adr_from_panel[129]; // panel twi address mapping, we can have same address in different channels
 uint8_t  g_quiet_mode=TRUE;
 
 
-uint16_t num_buf_load_x = 1;
-uint16_t last_load_x = 0;
-uint16_t num_buf_load_y = 1;
-uint16_t last_load_y = 0;
 
 static const uint8_t VERSION[] = "1.2\0";
 static const uint8_t SDInfo[] = "SD.mat\0";
@@ -125,6 +127,25 @@ ISR(TWIF_TWIM_vect)
     TWI_MasterInterruptHandler(&twi4);
 }
 
+
+//external trigger mode for int2 to start playing pattern
+ISR(PORTK_INT0_vect)
+{
+	//set these to zero so that we start at beginning of function - useful for putting in a set amount of expansion.
+	g_index_func_x_read = 0;
+	g_index_func_y_read = 0;
+	g_b_running = TRUE;
+	g_display_count = 0;  //clear the display count
+
+	Reg_Handler(update_display,    UPDATE_PERIOD,   ISR_UPDATE_DISPLAY,    TRUE);
+	Reg_Handler(increment_index_x, UPDATE_PERIOD,   ISR_INCREMENT_INDEX_X, FALSE); //initialize ISRs to a fast rate so that the countdown is fast until the
+	Reg_Handler(increment_index_y, UPDATE_PERIOD,   ISR_INCREMENT_INDEX_Y, FALSE); // setting of the next rate by the update_display interrupt.
+	Reg_Handler(update_funcCnt_x,  g_period_func_x, ISR_INCREMENT_FUNC_X,  TRUE);
+	Reg_Handler(update_funcCnt_y,  g_period_func_y, ISR_INCREMENT_FUNC_Y,  TRUE);
+
+
+	xputs(PSTR("INT3 catches a rising edge trigger!\n"));
+}
 
 
 
@@ -181,7 +202,7 @@ int main(void)
     /* Join xitoa module to uart module */
     xfunc_out = (void (*)(char))uart_put;
     
-    for (i=0; i<FUNCTION_LENGTH; i++)
+    for (i=0; i<RINGBUFFER_LENGTH; i++)
     { 
     	g_buf_func_x[i] = g_buf_func_y[i] = 10;
     }// here we use 10 as the equivalent for 1 V.
@@ -191,9 +212,9 @@ int main(void)
     for (i=0; i<125; i++)
     { 
         if (((i>=0) && (i<=2)) || ((i>=6) && (i<=8)))
-            laserPattern[i] = 255;
+            g_laserpattern[i] = 255;
         else
-            laserPattern[i] = 0;
+            g_laserpattern[i] = 0;
     }
     
     
@@ -215,7 +236,7 @@ int main(void)
             chMap[b1] = b1 % 4;
             if (b1 && (chMap[b1] == 0))
                 chMap[b1] = 4;
-            adrMap[b1] = b1; // panel address identity mapping
+            g_adr_from_panel[b1] = b1; // panel address identity mapping
         }
     } 
     else //load panel mapping from EEPROM
@@ -223,7 +244,7 @@ int main(void)
         for (b1 = 0; b1 <= 128; b1++)
         {
             chMap[b1] = eeprom_read_byte(arena_config + b1);
-            adrMap[b1] = b1; // panel address identity mapping
+            g_adr_from_panel[b1] = b1; // panel address identity mapping
         }
     }
     
@@ -352,19 +373,19 @@ int main(void)
                 }
                 
                 //g_filllevel_buf_func_x in word, 2 bytes.
-                if (!g_b_default_func_x && (g_filllevel_buf_func_x <= FUNCTION_LENGTH/4) && (g_index_func_x_read != index_func_x_read_prev))
+                if (!g_b_default_func_x && (g_filllevel_buf_func_x <= RINGBUFFER_LENGTH/4) && (g_index_func_x_read != index_func_x_read_prev))
                 {                    
                     index_func_x_read_prev = g_index_func_x_read;
-                    fetch_and_update_func_x(&file2, FALSE, next_block_x);
-                    next_block_x = (next_block_x+1) % num_buf_load_x;
+                    fetch_block_func_x(&file2, FALSE, g_iblock_func_x);
+                    g_iblock_func_x = (g_iblock_func_x+1) % g_nblocks_func_x;
                     //xprintf(PSTR("g_filllevel_buf_func_x=%u, g_index_func_x_read=%u\n"), g_filllevel_buf_func_x, g_index_func_x_read);
                 }
 
-                if (!g_b_default_func_y && (g_filllevel_buf_func_y <= FUNCTION_LENGTH/4) && (g_index_func_y_read != index_func_y_read_prev))
+                if (!g_b_default_func_y && (g_filllevel_buf_func_y <= RINGBUFFER_LENGTH/4) && (g_index_func_y_read != index_func_y_read_prev))
                 {                    
                     index_func_y_read_prev = g_index_func_y_read;
-                    fetch_and_update_func_y(&file3, FALSE, next_block_y);
-                    next_block_y = (next_block_y + 1)%num_buf_load_y;
+                    fetch_block_func_y(&file3, FALSE, g_iblock_func_y);
+                    g_iblock_func_y = (g_iblock_func_y + 1)%g_nblocks_func_y;
                     //xprintf(PSTR("g_filllevel_buf_func_y=%u, g_index_func_y_read=%u\n"), g_filllevel_buf_func_y, g_index_func_y_read);
                 }
 
@@ -416,22 +437,22 @@ void start_running(void)
     // Set indices to the beginning of the function - useful for putting in a set amount of expansion.
     g_index_func_x_read = 0;
     g_index_func_y_read = 0;
-    next_block_x = 1;
-    next_block_y = 1;
+    g_iblock_func_x = 1;
+    g_iblock_func_y = 1;
     g_display_count = 0;  //clear the display count
-    Reg_Handler(update_display, UPDATE_PERIOD, IRQ_UPDATE_DISPLAY, TRUE);
-    Reg_Handler(increment_index_x, UPDATE_PERIOD, IRQ_INCREMENT_INDEX_X, FALSE); //initialize the 2 and 3 priority interupts to a fast rate so that
-    Reg_Handler(increment_index_y, UPDATE_PERIOD, IRQ_INCREMENT_INDEX_Y, FALSE); // the countdown is fast until the setting of the next rate
+    Reg_Handler(update_display, UPDATE_PERIOD, ISR_UPDATE_DISPLAY, TRUE);
+    Reg_Handler(increment_index_x, UPDATE_PERIOD, ISR_INCREMENT_INDEX_X, FALSE); //initialize the 2 and 3 priority interupts to a fast rate so that
+    Reg_Handler(increment_index_y, UPDATE_PERIOD, ISR_INCREMENT_INDEX_Y, FALSE); // the countdown is fast until the setting of the next rate
                                                         //by the update_display interupt.
     if (g_b_default_func_x)
-        Reg_Handler(update_funcCnt_x, g_period_func_x, IRQ_INCREMENT_FUNC_X, FALSE);
+        Reg_Handler(update_funcCnt_x, g_period_func_x, ISR_INCREMENT_FUNC_X, FALSE);
     else
-        Reg_Handler(update_funcCnt_x, g_period_func_x, IRQ_INCREMENT_FUNC_X, TRUE);
+        Reg_Handler(update_funcCnt_x, g_period_func_x, ISR_INCREMENT_FUNC_X, TRUE);
 
     if (g_b_default_func_y)
-        Reg_Handler(update_funcCnt_y, g_period_func_y, IRQ_INCREMENT_FUNC_Y, FALSE);
+        Reg_Handler(update_funcCnt_y, g_period_func_y, ISR_INCREMENT_FUNC_Y, FALSE);
     else
-        Reg_Handler(update_funcCnt_y, g_period_func_y, IRQ_INCREMENT_FUNC_Y, TRUE);
+        Reg_Handler(update_funcCnt_y, g_period_func_y, ISR_INCREMENT_FUNC_Y, TRUE);
 }
 
 
@@ -451,32 +472,32 @@ void handle_message_length_1(uint8_t *msg_buffer)
             
         case 0x25:  //Start display & trigger - same as regular, but this also does trigger
         	start_running();
-        	Reg_Handler(toggle_trigger, (uint32_t)OVERFLOW_PERIOD/trigger_rate, IRQ_TOGGLE_TRIGGER, TRUE); //turn on the trigger toggle
+        	Reg_Handler(toggle_trigger, (uint32_t)OVERFLOW_PERIOD/g_trigger_rate, ISR_TOGGLE_TRIGGER, TRUE); //turn on the trigger toggle
             break;
 
         case 0x30: //stop display
             g_b_running = FALSE;
             //turn off the interupts
-            Reg_Handler(update_display, UPDATE_PERIOD, IRQ_UPDATE_DISPLAY, FALSE);
-            Reg_Handler(increment_index_x, UPDATE_PERIOD, IRQ_INCREMENT_INDEX_X, FALSE);
-            Reg_Handler(increment_index_y, UPDATE_PERIOD, IRQ_INCREMENT_INDEX_Y, FALSE);
-            Reg_Handler(update_funcCnt_x, g_period_func_x, IRQ_INCREMENT_FUNC_X, FALSE);
-            Reg_Handler(update_funcCnt_y, g_period_func_y, IRQ_INCREMENT_FUNC_Y, FALSE);
+            Reg_Handler(update_display, UPDATE_PERIOD, ISR_UPDATE_DISPLAY, FALSE);
+            Reg_Handler(increment_index_x, UPDATE_PERIOD, ISR_INCREMENT_INDEX_X, FALSE);
+            Reg_Handler(increment_index_y, UPDATE_PERIOD, ISR_INCREMENT_INDEX_Y, FALSE);
+            Reg_Handler(update_funcCnt_x, g_period_func_x, ISR_INCREMENT_FUNC_X, FALSE);
+            Reg_Handler(update_funcCnt_y, g_period_func_y, ISR_INCREMENT_FUNC_Y, FALSE);
             if (!g_b_default_func_x)
-                fetch_and_update_func_x(&file2, TRUE, 0);
+                fetch_block_func_x(&file2, TRUE, 0);
             if (!g_b_default_func_y)
-                fetch_and_update_func_y(&file3, TRUE, 0);
+                fetch_block_func_y(&file3, TRUE, 0);
             break;
             
         case 0x35: //stop display & trigger - same as regular, but this also does trigger
             g_b_running = FALSE;
             //turn off the interupts
-            Reg_Handler(update_display, UPDATE_PERIOD, IRQ_UPDATE_DISPLAY, FALSE);
-            Reg_Handler(increment_index_x, UPDATE_PERIOD, IRQ_INCREMENT_INDEX_X, FALSE);
-            Reg_Handler(increment_index_y, UPDATE_PERIOD, IRQ_INCREMENT_INDEX_Y, FALSE);
-            Reg_Handler(update_funcCnt_x, g_period_func_x, IRQ_INCREMENT_FUNC_X, FALSE);
-            Reg_Handler(update_funcCnt_y, g_period_func_y, IRQ_INCREMENT_FUNC_Y, FALSE);
-            Reg_Handler(toggle_trigger, OVERFLOW_PERIOD/trigger_rate, IRQ_TOGGLE_TRIGGER, FALSE); //turn off the trigger toggle
+            Reg_Handler(update_display, UPDATE_PERIOD, ISR_UPDATE_DISPLAY, FALSE);
+            Reg_Handler(increment_index_x, UPDATE_PERIOD, ISR_INCREMENT_INDEX_X, FALSE);
+            Reg_Handler(increment_index_y, UPDATE_PERIOD, ISR_INCREMENT_INDEX_Y, FALSE);
+            Reg_Handler(update_funcCnt_x, g_period_func_x, ISR_INCREMENT_FUNC_X, FALSE);
+            Reg_Handler(update_funcCnt_y, g_period_func_y, ISR_INCREMENT_FUNC_Y, FALSE);
+            Reg_Handler(toggle_trigger, OVERFLOW_PERIOD/g_trigger_rate, ISR_TOGGLE_TRIGGER, FALSE); //turn off the trigger toggle
             digitalWrite(DIO_TRIGGEROUT,LOW);    //set the trigger output to low
             break;
             
@@ -511,11 +532,11 @@ void handle_message_length_1(uint8_t *msg_buffer)
         case 0x9F:  i2cMasterSend(0x00, 32, G_LEVELS_16[15]); break;
         
         case 0x10:  // turn laser on
-            Laser_active = TRUE;
+            g_b_laseractive = TRUE;
             break;
             
         case 0x11:  // turn laser off
-            Laser_active = FALSE;
+            g_b_laseractive = FALSE;
             // turn off the lines that may be connected
             digitalWrite(DIO_LASER, LOW);
             break;
@@ -585,10 +606,10 @@ void handle_message_length_1(uint8_t *msg_buffer)
                tmp_y += analogRead(3);
                _delay_ms(5);
             };
-            resolution_x  =  tmp_x / n_sample;
-            resolution_y  =  tmp_y / n_sample;
-            xprintf(PSTR("resolution_x =  %d:\n"), resolution_x);
-            xprintf(PSTR("resolution_y =  %d:\n"), resolution_y);
+            g_resolution_x  =  tmp_x / n_sample;
+            g_resolution_y  =  tmp_y / n_sample;
+            xprintf(PSTR("resolution_x =  %d:\n"), g_resolution_x);
+            xprintf(PSTR("resolution_y =  %d:\n"), g_resolution_y);
             break;
     
         default: i2cMasterSend(0x00, 8, ERROR_CODES[1]);
@@ -623,7 +644,7 @@ void handle_message_length_2(uint8_t *msg_buffer)
             break;
             
         case 0x06: // this is a trigger rate set command
-            trigger_rate = argument_byte*2;  //here argument_byte is a trigger rate
+            g_trigger_rate = argument_byte*2;  //here argument_byte is a trigger rate
             break;
             
         case 0x07:   //flash panel#
@@ -726,9 +747,9 @@ void handle_message_length_3(uint8_t *msg_buffer)
                 xprintf(PSTR("function Y update frequency = %u.\n"), funcY_freq);
             break;
             
-        case 0x35: //set resoultion_x and resolution_y    
-            resolution_x = (uint32_t)msg_buffer[1] * 4095/10;
-            resolution_y = (uint32_t)msg_buffer[2] * 4095/10;
+        case 0x35: //set resolution_x and g_resolution_y
+            g_resolution_x = (uint32_t)msg_buffer[1] * 4095/10;
+            g_resolution_y = (uint32_t)msg_buffer[2] * 4095/10;
             break;
             
         default: i2cMasterSend(0x00, 8, ERROR_CODES[3]);
@@ -802,7 +823,7 @@ void handle_message_length_62(uint8_t *msg_buffer)
 
     for (i = 0; i<62; i++)
     {
-        laserPattern[i] = msg_buffer[i];
+        g_laserpattern[i] = msg_buffer[i];
     }
 
 }
@@ -817,7 +838,7 @@ void handle_message_length_63(uint8_t *msg_buffer)
     
     for (i = 0; i<63; i++)
     {
-        laserPattern[62 + i] = msg_buffer[i];
+        g_laserpattern[62 + i] = msg_buffer[i];
     }
     
     
@@ -889,7 +910,7 @@ void fetch_and_display_frame(FIL *pFile, uint16_t index_frame, uint16_t Xindex, 
         
         
     uint8_t  frameBuff[len];
-    offset = 512 + (uint32_t)index_frame * 512 * block_per_frame;
+    offset = NBYTES_HEADER + (uint32_t)index_frame * 512 * block_per_frame;
 
     fresult = f_lseek(pFile, offset);
     if ((fresult == FR_OK) && (pFile->fptr == offset))
@@ -1013,12 +1034,12 @@ void fetch_and_display_frame(FIL *pFile, uint16_t index_frame, uint16_t Xindex, 
 
     
       //also update the output lines for quadrant-type learning patterns
-    if (Laser_active)
+    if (g_b_laseractive)
     {
-        arrayIndex = g_x/8;  // find the index in laserPattern array for g_x
-        bitIndex = g_x - arrayIndex*8;  // find the bit index in a laserPattern byte for g_x
+        arrayIndex = g_x/8;  // find the index in g_laserpattern array for g_x
+        bitIndex = g_x - arrayIndex*8;  // find the bit index in a g_laserpattern byte for g_x
     
-        tempVal = laserPattern[arrayIndex];
+        tempVal = g_laserpattern[arrayIndex];
     
         if ((tempVal & (1<<(7-bitIndex))) == 0)
             digitalWrite(DIO_LASER, LOW);  // turn off laser
@@ -1142,19 +1163,19 @@ void update_display(void)
     
 
     if (xRate > 0)
-        Update_Reg_Handler(increment_index_x, (uint32_t)OVERFLOW_PERIOD/abs(xRate), IRQ_INCREMENT_INDEX_X, TRUE);
+        Update_Reg_Handler(increment_index_x, (uint32_t)OVERFLOW_PERIOD/abs(xRate), ISR_INCREMENT_INDEX_X, TRUE);
     else if (xRate < 0)
-        Update_Reg_Handler(decrement_index_x, (uint32_t)OVERFLOW_PERIOD/abs(xRate), IRQ_INCREMENT_INDEX_X, TRUE);
+        Update_Reg_Handler(decrement_index_x, (uint32_t)OVERFLOW_PERIOD/abs(xRate), ISR_INCREMENT_INDEX_X, TRUE);
     else     //xRate == 0
-        Update_Reg_Handler(decrement_index_x, (UPDATE_PERIOD), IRQ_INCREMENT_INDEX_X, FALSE);
+        Update_Reg_Handler(decrement_index_x, (UPDATE_PERIOD), ISR_INCREMENT_INDEX_X, FALSE);
     
     
     if (yRate > 0)
-        Update_Reg_Handler(increment_index_y, (uint32_t)OVERFLOW_PERIOD/abs(yRate), IRQ_INCREMENT_INDEX_Y, TRUE);
+        Update_Reg_Handler(increment_index_y, (uint32_t)OVERFLOW_PERIOD/abs(yRate), ISR_INCREMENT_INDEX_Y, TRUE);
     else if (yRate < 0)
-        Update_Reg_Handler(decrement_index_y, (uint32_t)OVERFLOW_PERIOD/abs(yRate), IRQ_INCREMENT_INDEX_Y, TRUE);
+        Update_Reg_Handler(decrement_index_y, (uint32_t)OVERFLOW_PERIOD/abs(yRate), ISR_INCREMENT_INDEX_Y, TRUE);
     else      //yRate == 0
-        Update_Reg_Handler(decrement_index_y, (UPDATE_PERIOD), IRQ_INCREMENT_INDEX_Y, FALSE);
+        Update_Reg_Handler(decrement_index_y, (UPDATE_PERIOD), ISR_INCREMENT_INDEX_Y, FALSE);
     
     g_xrate_greater_yrate = (xRate >= yRate);
 }
@@ -1225,7 +1246,7 @@ void set_pattern(uint8_t pat_num)
     uint16_t num_frames;
     uint16_t cnt;
     static uint8_t str[12];
-    uint8_t  pattDataBuff[512];
+    uint8_t  bufHeader[NBYTES_HEADER];
     uint8_t res;
     
     if (pat_num < 1000)
@@ -1238,17 +1259,16 @@ void set_pattern(uint8_t pat_num)
     res = f_open(&file1, str, FA_OPEN_EXISTING | FA_READ);
     if (res == FR_OK)
     {
-        res = f_read(&file1, pattDataBuff, 512, &cnt); // read the 10 byte test header info block
-        if ((res == FR_OK) && (cnt == 512))
+        res = f_read(&file1, bufHeader, NBYTES_HEADER, &cnt); // read the 10 byte header info block
+        if ((res == FR_OK) && (cnt == NBYTES_HEADER))
         {
-
-            // get the test header info
-            ((uint8_t*)&g_x_max)[0] = pattDataBuff[0];
-            ((uint8_t*)&g_x_max)[1] = pattDataBuff[1];
-            ((uint8_t*)&g_y_max)[0] = pattDataBuff[2];
-            ((uint8_t*)&g_y_max)[1] = pattDataBuff[3];
-            g_num_panels = pattDataBuff[4];
-            gs_value = pattDataBuff[5];   //11, 12, 13, or 14 means use row compression
+            // get the header info
+            ((uint8_t*)&g_x_max)[0] = bufHeader[0];
+            ((uint8_t*)&g_x_max)[1] = bufHeader[1];
+            ((uint8_t*)&g_y_max)[0] = bufHeader[2];
+            ((uint8_t*)&g_y_max)[1] = bufHeader[3];
+            g_num_panels = bufHeader[4];
+            gs_value = bufHeader[5];   //11, 12, 13, or 14 means use row compression
             
             
             num_frames = g_x_max * g_y_max;
@@ -1369,7 +1389,7 @@ void i2cMasterSend(uint8_t panel, uint8_t len, uint8_t *data)
     {
         // look up the actual panel address and channel
         ch = chMap[panel];
-        addr = adrMap[panel];
+        addr = g_adr_from_panel[panel];
         if (ch != 0)
         {
             
@@ -1399,45 +1419,49 @@ void i2cMasterSend(uint8_t panel, uint8_t len, uint8_t *data)
     }
 }
 
-void set_default_func(uint8_t func_channel)
+
+// set_default_func()
+// The default function is a constant 10.
+//
+void set_default_func(uint8_t channel)
 {
     uint16_t i;
     
-    switch (func_channel)
+    switch (channel)
     {
         case 1:
             if (!g_quiet_mode)
                 xputs(PSTR("Setting default function for X.\n"));
-            
 
-            //Reg_Handler(update_funcCnt_x, g_period_func_x, IRQ_INCREMENT_FUNC_X, FALSE);//disable ISR
+            //Reg_Handler(update_funcCnt_x, g_period_func_x, ISR_INCREMENT_FUNC_X, FALSE);// disable ISR
             g_id_func_x = 0;
             g_b_default_func_x = TRUE;
-            funcSize_x = FUNCTION_LENGTH;
+            g_nbytes_func_x = RINGBUFFER_LENGTH;
 
-            for (i=0; i<FUNCTION_LENGTH; i++)
+            for (i=0; i<RINGBUFFER_LENGTH; i++)
                 g_buf_func_x[i] = 10;
 
             g_index_func_x_read = 0;
-            num_buf_load_x = 1;
-            last_load_x = 0;
-            //Reg_Handler(update_funcCnt_x, g_period_func_x, IRQ_INCREMENT_FUNC_X, TRUE);//don't need to enable ISR
+            g_nblocks_func_x = 1;
+            g_nbytes_final_block_x = 0;
+            //Reg_Handler(update_funcCnt_x, g_period_func_x, ISR_INCREMENT_FUNC_X, TRUE);// enable ISR
             break;
         case 2:
             if (!g_quiet_mode)
                 xputs(PSTR("Setting default function for Y.\n"));
-            //Reg_Handler(update_funcCnt_y, g_period_func_y, IRQ_INCREMENT_FUNC_Y, FALSE);//disable ISR
+
+            //Reg_Handler(update_funcCnt_y, g_period_func_y, ISR_INCREMENT_FUNC_Y, FALSE);// disable ISR
             g_id_func_y = 0;
             g_b_default_func_y = TRUE;
-            funcSize_y = FUNCTION_LENGTH;
+            g_nbytes_func_y = RINGBUFFER_LENGTH;
 
-            for (i=0; i<FUNCTION_LENGTH; i++)
+            for (i=0; i<RINGBUFFER_LENGTH; i++)
                 g_buf_func_y[i] = 10;
             
             g_index_func_y_read = 0;
-            num_buf_load_y = 1;
-            last_load_y = 0;
-            //Reg_Handler(update_funcCnt_y, g_period_func_y, IRQ_INCREMENT_FUNC_Y, TRUE);//don't need to enable ISR
+            g_nblocks_func_y = 1;
+            g_nbytes_final_block_y = 0;
+            //Reg_Handler(update_funcCnt_y, g_period_func_y, ISR_INCREMENT_FUNC_Y, TRUE);// enable ISR
             break;
         default:
             xputs(PSTR("Function channel number must be 1 for x, or 2 for y.\n"));
@@ -1447,19 +1471,17 @@ void set_default_func(uint8_t func_channel)
 }
 
 
-void set_pos_func(uint8_t func_channel, uint8_t id_func)
+void set_pos_func(uint8_t channel, uint8_t id_func)
 {
     uint16_t cnt;
-    uint8_t tmpCnt;
     uint8_t str[12];
+    //uint8_t i;
     //uint8_t func_name_x[100];
     //uint8_t func_name_y[100];
-    FRESULT frOpen=FR_INVALID_OBJECT;
-    FRESULT	frRead=FR_INVALID_OBJECT;
+    //uint8_t func_name_len;
+    FRESULT fresult=FR_INVALID_OBJECT;
     FIL		*pFile=NULL;	// The file we're working on: &file2 or &file3.
-    uint8_t func_name_len;
-    uint8_t bufPosFunc[512];
-    uint16_t nbytesBuffer = FUNCTION_LENGTH;
+    uint8_t bufHeader[NBYTES_HEADER];
     
     
     if (id_func < 1000)
@@ -1467,59 +1489,62 @@ void set_pos_func(uint8_t func_channel, uint8_t id_func)
     else
         xputs(PSTR("function id is too big.\n"));
     
-    switch(func_channel)
+    switch(channel)
     {
         case 1:    //channel x
-            //read the header block and send back the function name
-            //Reg_Handler(update_funcCnt_x, g_period_func_x, IRQ_INCREMENT_FUNC_X, FALSE);//disable ISR
+            //read the 512 byte header block and send back the function name
+            //Reg_Handler(update_funcCnt_x, g_period_func_x, ISR_INCREMENT_FUNC_X, FALSE);//disable ISR
             
             pFile = &file2;
-            frOpen = f_open(pFile, str, FA_OPEN_EXISTING | FA_READ);
-            if (frOpen == FR_OK)
+            fresult = f_open(pFile, str, FA_OPEN_EXISTING | FA_READ);
+            if (fresult == FR_OK)
             {
-            	// Read the file into the position buffer.
-                frRead = f_read(pFile, bufPosFunc, 512, &cnt);
-                if ((frRead == FR_OK) && (cnt == 512))
+            	// Read the header into the buffer.
+                fresult = f_read(pFile, bufHeader, NBYTES_HEADER, &cnt);
+                if ((fresult == FR_OK) && (cnt == NBYTES_HEADER))
                 {
-                    // get the test header info
-                    ((uint8_t*)&funcSize_x)[0] = bufPosFunc[0];
-                    ((uint8_t*)&funcSize_x)[1] = bufPosFunc[1];
-                    ((uint8_t*)&funcSize_x)[2] = bufPosFunc[2];
-                    ((uint8_t*)&funcSize_x)[3] = bufPosFunc[3];
-                    func_name_len = bufPosFunc[4];
+                    // Get the 32 bit length of the function.
+                    ((uint8_t*)&g_nbytes_func_x)[0] = bufHeader[0];
+                    ((uint8_t*)&g_nbytes_func_x)[1] = bufHeader[1];
+                    ((uint8_t*)&g_nbytes_func_x)[2] = bufHeader[2];
+                    ((uint8_t*)&g_nbytes_func_x)[3] = bufHeader[3];
                     
-                    
-                    //for (tmpCnt=0; tmpCnt<func_name_len; tmpCnt++)
-                    //    {func_name_x[tmpCnt] = bufPosFunc[tmpCnt+5];}
+                    // Get the function name.
+                    //func_name_len = bufHeader[4];
+                    //for (i=0; i<func_name_len; i++)
+                    //    {func_name_x[i] = bufHeader[i+5];}
                     //func_name_x[func_name_len] = '\0';
                     
-                    g_id_func_x = id_func;
-                    
-                    g_b_running = FALSE;
-                    g_display_count = 0;  //clear the display count
-                    if (!g_quiet_mode)
-                        xprintf(PSTR("Setting position function %u for X\n"), id_func);
-                    //xprintf(PSTR("fun X: %s\n function X size: %lu bytes\n"),
-                    //        func_name_x, funcSize_x);
-                    
-                    last_load_x = funcSize_x % nbytesBuffer;
 
-                    if (last_load_x == 0)
-                        num_buf_load_x = funcSize_x / nbytesBuffer;
-                    else
-                        num_buf_load_x = funcSize_x / nbytesBuffer + 1;
+                    // Indicate that the function is ready.
+                    g_id_func_x = id_func;
+                    g_b_default_func_x = FALSE;
+                    g_b_running = FALSE;
+                    g_display_count = 0;
 
                     if (!g_quiet_mode)
                     {
-                        xprintf(PSTR("funcSize_x = %u\n"), funcSize_x);
-                        xprintf(PSTR("last_load_x = %u\n"), last_load_x);
-                        xprintf(PSTR("num_buf_load_x = %u\n"), num_buf_load_x);
+                        xprintf(PSTR("Setting position function %u for X\n"), id_func);
+						//xprintf(PSTR("fun X: %s\n function X size: %lu bytes\n"), func_name_x, g_nbytes_func_x);
+                    }
+                    
+                    g_nbytes_final_block_x = g_nbytes_func_x % RINGBUFFER_LENGTH;
+
+                    if (g_nbytes_final_block_x == 0)
+                        g_nblocks_func_x = g_nbytes_func_x / RINGBUFFER_LENGTH;
+                    else
+                        g_nblocks_func_x = g_nbytes_func_x / RINGBUFFER_LENGTH + 1;
+
+                    if (!g_quiet_mode)
+                    {
+                        xprintf(PSTR("g_nbytes_func_x = %u\n"), g_nbytes_func_x);
+                        xprintf(PSTR("g_nbytes_final_block_x = %u\n"), g_nbytes_final_block_x);
+                        xprintf(PSTR("g_nblocks_func_x = %u\n"), g_nblocks_func_x);
                     }
 
-                    g_b_default_func_x = FALSE;
 
                     //update the function buffer
-                    fetch_and_update_func_x(pFile, TRUE, 0);
+                    fetch_block_func_x(pFile, TRUE, 0);
 
                 }
                 else
@@ -1530,53 +1555,53 @@ void set_pos_func(uint8_t func_channel, uint8_t id_func)
             else
 				xputs(PSTR("Error opening file in set_pos_func(): X.\n"));
                 
-            //Reg_Handler(update_funcCnt_x, g_period_func_x, IRQ_INCREMENT_FUNC_X, TRUE);//enable ISR
+            //Reg_Handler(update_funcCnt_x, g_period_func_x, ISR_INCREMENT_FUNC_X, TRUE);//enable ISR
             break;
             
         case 2:	// channel y.
-            //Reg_Handler(update_funcCnt_y, g_period_func_y, IRQ_INCREMENT_FUNC_Y, FALSE); //disable ISR
+            //Reg_Handler(update_funcCnt_y, g_period_func_y, ISR_INCREMENT_FUNC_Y, FALSE); //disable ISR
             //read the header block and send back the function name
             pFile = &file3;
-            frOpen = f_open(pFile, str, FA_OPEN_EXISTING | FA_READ);
-            if (frOpen == FR_OK)
+            fresult = f_open(pFile, str, FA_OPEN_EXISTING | FA_READ);
+            if (fresult == FR_OK)
             {
-                frRead = f_read(pFile, bufPosFunc, 512, &cnt);
-                if ((frRead == FR_OK) && (cnt == 512))
+                fresult = f_read(pFile, bufHeader, NBYTES_HEADER, &cnt);
+                if ((fresult == FR_OK) && (cnt == NBYTES_HEADER))
                 {
-                    // get the test header info
-                    // get the test header info
-                    ((uint8_t*)&funcSize_y)[0] = bufPosFunc[0];
-                    ((uint8_t*)&funcSize_y)[1] = bufPosFunc[1];
-                    ((uint8_t*)&funcSize_y)[2] = bufPosFunc[2];
-                    ((uint8_t*)&funcSize_y)[3] = bufPosFunc[3];
-                    func_name_len = bufPosFunc[4];
+                	// Get the 32 bit length of the function.
+                    ((uint8_t*)&g_nbytes_func_y)[0] = bufHeader[0];
+                    ((uint8_t*)&g_nbytes_func_y)[1] = bufHeader[1];
+                    ((uint8_t*)&g_nbytes_func_y)[2] = bufHeader[2];
+                    ((uint8_t*)&g_nbytes_func_y)[3] = bufHeader[3];
+                    //func_name_len = bufHeader[4];
                     
+                    // Indicate that the function is ready.
                     g_id_func_y = id_func;
                     g_b_default_func_y = FALSE;
-                    
                     g_b_running = FALSE;
-                    g_display_count = 0;  //clear the display count
+                    g_display_count = 0;
+
                     if (!g_quiet_mode)
                         xprintf(PSTR("Setting position function %u for Y\n"), id_func);
                     //xprintf(PSTR("fun Y: %s\n function Y size: %lu bytes\n"),
-                    //       func_name_y, funcSize_y);
+                    //       func_name_y, g_nbytes_func_y);
                     
-                    last_load_y = funcSize_y % nbytesBuffer;
+                    g_nbytes_final_block_y = g_nbytes_func_y % RINGBUFFER_LENGTH;
 
-                    if (last_load_y == 0)
-                        num_buf_load_y = funcSize_y / nbytesBuffer;
+                    if (g_nbytes_final_block_y == 0)
+                        g_nblocks_func_y = g_nbytes_func_y / RINGBUFFER_LENGTH;
                     else
-                        num_buf_load_y = funcSize_y / nbytesBuffer + 1;
+                        g_nblocks_func_y = g_nbytes_func_y / RINGBUFFER_LENGTH + 1;
 
                     if (!g_quiet_mode)
                     {
-                        xprintf(PSTR("funcSize_y = %u\n"), funcSize_y);
-                        xprintf(PSTR("last_load_y = %u \n"), last_load_y);
-                        xprintf(PSTR("num_buf_load_y = %u\n"), num_buf_load_y);
+                        xprintf(PSTR("g_nbytes_func_y = %u\n"), g_nbytes_func_y);
+                        xprintf(PSTR("g_nbytes_final_block_y = %u \n"), g_nbytes_final_block_y);
+                        xprintf(PSTR("g_nblocks_func_y = %u\n"), g_nblocks_func_y);
                     }
 
                     //update the function buffer
-                    fetch_and_update_func_y(pFile, TRUE, 0);
+                    fetch_block_func_y(pFile, TRUE, 0);
 
                 }
                 else
@@ -1587,7 +1612,7 @@ void set_pos_func(uint8_t func_channel, uint8_t id_func)
             else
 				xputs(PSTR("Error opening file in set_pos_func(): Y.\n"));
             
-            //Reg_Handler(update_funcCnt_y, g_period_func_y, IRQ_INCREMENT_FUNC_Y, TRUE);//enable ISR
+            //Reg_Handler(update_funcCnt_y, g_period_func_y, ISR_INCREMENT_FUNC_Y, TRUE);//enable ISR
             break;
             
         default:
@@ -1597,19 +1622,17 @@ void set_pos_func(uint8_t func_channel, uint8_t id_func)
 }
 
 
-void set_vel_func(uint8_t func_channel, uint8_t id_func)
+void set_vel_func(uint8_t channel, uint8_t id_func)
 {
     //sets the velocity function id
     uint16_t cnt;
-    uint8_t tempCnt;
     uint8_t str[12];
     //uint8_t func_name_x[100];
     //uint8_t func_name_y[100];
-    FRESULT frOpen=FR_INVALID_OBJECT;
-    FRESULT	frRead=FR_INVALID_OBJECT;
+    //uint8_t func_name_len;
+    FRESULT fresult=FR_INVALID_OBJECT;
     FIL		*pFile=NULL;	// The file we're working on: &file2 or &file3.
-    uint8_t func_name_len;
-    uint8_t bufVelFunc[512];
+    uint8_t bufHeader[NBYTES_HEADER];
     
     
     if (id_func < 1000)
@@ -1617,133 +1640,133 @@ void set_vel_func(uint8_t func_channel, uint8_t id_func)
     else
         xputs(PSTR("function id is too big.\n"));
     
-    switch(func_channel)
+    switch(channel)
     {
         case 1:    //channel x
-            //Reg_Handler(update_funcCnt_x, g_period_func_x, IRQ_INCREMENT_FUNC_X, FALSE); //disable ISR
+            //Reg_Handler(update_funcCnt_x, g_period_func_x, ISR_INCREMENT_FUNC_X, FALSE); //disable ISR
             pFile = &file2;
-        	frOpen = f_open(pFile, str, FA_OPEN_EXISTING | FA_READ);
+        	fresult = f_open(pFile, str, FA_OPEN_EXISTING | FA_READ);
             
-            if (frOpen == FR_OK)
+            if (fresult == FR_OK)
             {
                 // Read the header block and send back the function name
-                frRead = f_read(pFile, bufVelFunc, 512, &cnt);
+                fresult = f_read(pFile, bufHeader, NBYTES_HEADER, &cnt);
                 
-                if ((frRead == FR_OK) && (cnt == 512))
+                if ((fresult == FR_OK) && (cnt == NBYTES_HEADER))
                 {
-                    // get the test header info
-                    ((uint8_t*)&funcSize_x)[0] = bufVelFunc[0];
-                    ((uint8_t*)&funcSize_x)[1] = bufVelFunc[1];
-                    ((uint8_t*)&funcSize_x)[2] = bufVelFunc[2];
-                    ((uint8_t*)&funcSize_x)[3] = bufVelFunc[3];
-                    func_name_len = bufVelFunc[4];
+                    // get the header info
+                    ((uint8_t*)&g_nbytes_func_x)[0] = bufHeader[0];
+                    ((uint8_t*)&g_nbytes_func_x)[1] = bufHeader[1];
+                    ((uint8_t*)&g_nbytes_func_x)[2] = bufHeader[2];
+                    ((uint8_t*)&g_nbytes_func_x)[3] = bufHeader[3];
+                    //func_name_len = bufHeader[4];
                     
                     g_id_func_x = id_func;
-                    
+                    g_b_default_func_x = FALSE;
                     g_b_running = FALSE;
                     g_display_count = 0;  //clear the display count
+
                     if (!g_quiet_mode)
                         xprintf(PSTR("Setting velocity function  %u for X\n"), id_func);
                     
                     if (!g_quiet_mode)
                     {
-                        xprintf(PSTR("funcSize_x = %u\n"), funcSize_x);
-                        last_load_x = funcSize_x % FUNCTION_LENGTH;
-                        xprintf(PSTR("last_load_x = %u\n"), last_load_x);
-                        if(!last_load_x)
+                        xprintf(PSTR("g_nbytes_func_x = %u\n"), g_nbytes_func_x);
+                        g_nbytes_final_block_x = g_nbytes_func_x % RINGBUFFER_LENGTH;
+                        xprintf(PSTR("g_nbytes_final_block_x = %u\n"), g_nbytes_final_block_x);
+                        if(!g_nbytes_final_block_x)
                         {
-                            num_buf_load_x = funcSize_x/FUNCTION_LENGTH;
-                            xprintf(PSTR("num_buf_load_x = %u\n"), num_buf_load_x);
+                            g_nblocks_func_x = g_nbytes_func_x/RINGBUFFER_LENGTH;
+                            xprintf(PSTR("g_nblocks_func_x = %u\n"), g_nblocks_func_x);
                         }
                         else
                         {
-                            num_buf_load_x = funcSize_x / FUNCTION_LENGTH + 1;
-                            xprintf(PSTR("num_buf_load_x = %u\n"), num_buf_load_x);
+                            g_nblocks_func_x = g_nbytes_func_x / RINGBUFFER_LENGTH + 1;
+                            xprintf(PSTR("g_nblocks_func_x = %u\n"), g_nblocks_func_x);
                         }
                     }
 
-                    g_b_default_func_x = FALSE;
 
                     // Reset the function, and read the first block of bytes into the function buffer.
-                    fetch_and_update_func_x(pFile, TRUE, 0);
+                    fetch_block_func_x(pFile, TRUE, 0);
 
                 }
                 else
                 	xputs(PSTR("Error reading file in set_vel_func(): X.\n"));
+
+            	f_close(pFile);
             }
             else
 				xputs(PSTR("Error opening file in set_vel_func(): X.\n"));
 
-            //Reg_Handler(update_funcCnt_x, g_period_func_x, IRQ_INCREMENT_FUNC_X, TRUE); //enable ISR
+            //Reg_Handler(update_funcCnt_x, g_period_func_x, ISR_INCREMENT_FUNC_X, TRUE); //enable ISR
             break;
             
         case 2:
             
-            //Reg_Handler(update_funcCnt_y, g_period_func_y, IRQ_INCREMENT_FUNC_Y, FALSE); //disable ISR
+            //Reg_Handler(update_funcCnt_y, g_period_func_y, ISR_INCREMENT_FUNC_Y, FALSE); //disable ISR
         	pFile = &file3;
-        	frOpen = f_open(pFile, str, FA_OPEN_EXISTING | FA_READ);
+        	fresult = f_open(pFile, str, FA_OPEN_EXISTING | FA_READ);
             
-            if (frOpen == FR_OK)
+            if (fresult == FR_OK)
             {
                 // Read the header block and send back the function name
-                frRead = f_read(pFile, bufVelFunc, 512, &cnt);
+                fresult = f_read(pFile, bufHeader, NBYTES_HEADER, &cnt);
                 
-                if ((frRead == FR_OK) && (cnt == 512))
+                if ((fresult == FR_OK) && (cnt == NBYTES_HEADER))
                 {
-                    // get the test header info
-                    ((uint8_t*)&funcSize_y)[0] = bufVelFunc[0];
-                    ((uint8_t*)&funcSize_y)[1] = bufVelFunc[1];
-                    ((uint8_t*)&funcSize_y)[2] = bufVelFunc[2];
-                    ((uint8_t*)&funcSize_y)[3] = bufVelFunc[3];
-                    func_name_len = bufVelFunc[4];
+                    // get the header info
+                    ((uint8_t*)&g_nbytes_func_y)[0] = bufHeader[0];
+                    ((uint8_t*)&g_nbytes_func_y)[1] = bufHeader[1];
+                    ((uint8_t*)&g_nbytes_func_y)[2] = bufHeader[2];
+                    ((uint8_t*)&g_nbytes_func_y)[3] = bufHeader[3];
+                    //func_name_len = bufHeader[4];
                     
                     g_id_func_y = id_func;
-                    
+                    g_b_default_func_y = FALSE;
                     g_b_running = FALSE;
                     g_display_count = 0;  //clear the display count
+
                     if (!g_quiet_mode)
                         xprintf(PSTR("Setting velocity function %u for Y\n"), id_func);
                     
                     if (!g_quiet_mode)
                     {
-                        xprintf(PSTR("funcSize_y = %u\n"), funcSize_y);
-                        last_load_y = funcSize_y % FUNCTION_LENGTH;
-                        xprintf(PSTR("last_load_y = %u\n"), last_load_y);
-                        if (last_load_y == 0)
+                        xprintf(PSTR("g_nbytes_func_y = %u\n"), g_nbytes_func_y);
+                        g_nbytes_final_block_y = g_nbytes_func_y % RINGBUFFER_LENGTH;
+                        xprintf(PSTR("g_nbytes_final_block_y = %u\n"), g_nbytes_final_block_y);
+                        if (g_nbytes_final_block_y == 0)
                         {
-                            num_buf_load_y = funcSize_y / FUNCTION_LENGTH;
-                            xprintf(PSTR("num_buf_load_y = %u\n"), num_buf_load_y);
+                            g_nblocks_func_y = g_nbytes_func_y / RINGBUFFER_LENGTH;
+                            xprintf(PSTR("g_nblocks_func_y = %u\n"), g_nblocks_func_y);
                         }
                         else
                         {
-                            num_buf_load_y = funcSize_y / FUNCTION_LENGTH + 1;
-                            xprintf(PSTR("num_buf_load_y = %u\n"), num_buf_load_y);
+                            g_nblocks_func_y = g_nbytes_func_y / RINGBUFFER_LENGTH + 1;
+                            xprintf(PSTR("g_nblocks_func_y = %u\n"), g_nblocks_func_y);
                         }
                     }
 
-                    g_b_default_func_y = FALSE;
 
                     // Reset the function, and read the first block of bytes into the function buffer.
-                    fetch_and_update_func_y(pFile, TRUE, 0);
+                    fetch_block_func_y(pFile, TRUE, 0);
 
                 }
                 else
 					xputs(PSTR("Error reading file in set_vel_func(): Y.\n"));
+
+            	f_close(pFile);
             }
             else
 				xputs(PSTR("Error opening file in set_vel_func(): Y.\n"));
             
-            //Reg_Handler(update_funcCnt_y, g_period_func_y, IRQ_INCREMENT_FUNC_Y, TRUE); //enable ISR
+            //Reg_Handler(update_funcCnt_y, g_period_func_y, ISR_INCREMENT_FUNC_Y, TRUE); //enable ISR
             break;
             
         default:
 			xputs(PSTR("Error input for function channel.\n"));
             break;
     }
-
-    if (frOpen==FR_OK)
-    	f_close(pFile);
-
 }
     
 
@@ -1752,127 +1775,126 @@ void update_funcCnt_x(void)
     int16_t X_dac_val;
     int16_t temp_ADC_val;
     int32_t temp_index_x;
-    uint16_t X_ADC2;
+    uint16_t adc_x;
 
     
-    if (!g_filllevel_buf_func_x)
+    if (g_filllevel_buf_func_x)
     {
-        xputs(PSTR("Ring buffer function_x is empty\n"));
-        return;
+        g_index_func_x_read++;
+        g_index_func_x_read %= RINGBUFFER_LENGTH;
+        g_filllevel_buf_func_x--;
+
+        switch(g_mode_x)
+        {
+            case 3:
+                adc_x = analogRead(2);  //adc_x ranges from 0-4095 (12bit ADC) when input 0-10V
+
+                if (adc_x>g_resolution_x)
+                	adc_x = g_resolution_x;
+
+                //calculate the g_x
+                temp_index_x = ((int32_t)adc_x * g_x_max * 2 + g_resolution_x) / ((int32_t) g_resolution_x * 2) - 1;
+
+                //check if too big
+                if (temp_index_x >= g_x_max)
+                    temp_index_x = g_x_max - 1;
+
+                //or too small
+                if (temp_index_x <= 0)
+                    temp_index_x = 0;
+
+                g_x = temp_index_x;
+
+                g_index_frame = g_y*g_x_max + g_x;
+                break;
+
+            case 4:
+                temp_ADC_val = X_pos_index + g_buf_func_x[g_index_func_x_read];
+                if (temp_ADC_val >= 0)
+                    g_x = temp_ADC_val%g_x_max;
+
+                //g_x should already smaller than g_x_max
+                if (temp_ADC_val < 0)
+                    g_x = g_x_max - ((abs(temp_ADC_val))%g_x_max) -1;
+
+                g_index_frame = g_y*g_x_max + g_x;
+                break;
+
+            case 5:   // in function DBG mode - show the function gen
+                //3277 is converted to 1V by DAC, we amplify function value so value 100 is about 1V
+                X_dac_val = g_buf_func_x[g_index_func_x_read]*33;
+                analogWrite(0, X_dac_val); // make it a value in the range -32767 - 32767 (-10V - 10V)
+                break;
+            
+        }
     }
-    
+    else
+        xputs(PSTR("Function buffer for x is empty\n"));
 
-    g_index_func_x_read++;
-    g_index_func_x_read %= FUNCTION_LENGTH;
-    g_filllevel_buf_func_x--;
-    
-    switch(g_mode_x)
-    {
-        case 3:
-            X_ADC2 = analogRead(2);  //X_ADC2 ranges from 0-4095 (12bit ADC) when input 0-10V
-
-            if (X_ADC2>resolution_x)
-            	X_ADC2 = resolution_x;
-            
-            //calculate the g_x
-            temp_index_x = ((int32_t)X_ADC2 * g_x_max * 2 + resolution_x) / ((int32_t) resolution_x * 2) - 1;
-
-            //check if too big
-            if (temp_index_x >= g_x_max)
-                temp_index_x = g_x_max - 1;
-
-            //or too small
-            if (temp_index_x <= 0)
-                temp_index_x = 0;
-
-            g_x = temp_index_x;
-            
-            g_index_frame = g_y*g_x_max + g_x;
-            break;
-            
-        case 4:
-            temp_ADC_val = X_pos_index + g_buf_func_x[g_index_func_x_read];
-            if (temp_ADC_val >= 0)
-                g_x = temp_ADC_val%g_x_max;
-
-            //g_x should already smaller than g_x_max
-            if (temp_ADC_val < 0)
-                g_x = g_x_max - ((abs(temp_ADC_val))%g_x_max) -1;
-
-            g_index_frame = g_y*g_x_max + g_x;
-            break;
-            
-        case 5:   // in function DBG mode - show the function gen
-            //3277 is converted to 1V by DAC, we amplify function value so value 100 is about 1V 
-            X_dac_val = g_buf_func_x[g_index_func_x_read]*33;
-            analogWrite(0, X_dac_val); // make it a value in the range -32767 - 32767 (-10V - 10V)
-            break;
-        
-    }
 }
 
-// fetch_and_update_func_x()
-// Read more data from the given open file into the X function buffer.
+// fetch_block_func_x()
+// Read a block from the given open file into the Y function buffer.
 //
-void fetch_and_update_func_x(FIL *pFile, uint8_t bReset, uint8_t num_of_load_x)
+void fetch_block_func_x(FIL *pFile, uint8_t bReset, uint8_t i_block_func_x)
 {
-    // num_of_load_x ranges from 0 to (num_buf_load_x - 1)
+    // i_block_func_x ranges from 0 to (g_nblocks_func_x - 1)
     // bReset==TRUE mean we need to load the first FUNCTIONLLENGTH of function data into buffer,
     //         because users always want the functions to start from the beginning every time they send start command.
 
     uint16_t	cnt, j, offset;
     FRESULT 	fresult;
-    uint8_t 	bufTemp[FUNCTION_LENGTH];
+    uint8_t 	bufTemp[RINGBUFFER_LENGTH];
     uint16_t 	nbytesBuf;
                 
-    //xprintf(PSTR("num_of_load_x =  %u\n"), num_of_load_x);            
-    if (g_filllevel_buf_func_x >= FUNCTION_LENGTH)
+    //xprintf(PSTR("i_block_func_x =  %u\n"), i_block_func_x);
+    if (g_filllevel_buf_func_x < RINGBUFFER_LENGTH)
     {
-        xputs(PSTR("Ring buffer function_x is full\n"));
-        return;
-    }
+        if (bReset)
+        {
+            g_index_func_x_read = 0;
+            g_index_func_x_write = 0;
+            g_filllevel_buf_func_x = 0;
+        }
         
-    if (bReset)
-    {
-        g_index_func_x_read = 0;
-        g_index_func_x_write = 0;
-        g_filllevel_buf_func_x = 0;
-    }
-    
-    offset = 512 + num_of_load_x * FUNCTION_LENGTH;
+        offset = NBYTES_HEADER + i_block_func_x * RINGBUFFER_LENGTH;
+
+        fresult = f_lseek(pFile, offset);
+        if ((fresult == FR_OK) && (pFile->fptr == offset))
+        {
+            //i_block_func_x ranges from 0 to g_nblocks_func_x - 1
+            if ((i_block_func_x ==  g_nblocks_func_x - 1) && (g_nbytes_final_block_x != 0))
+                nbytesBuf = g_nbytes_final_block_x;
+            else
+                nbytesBuf = RINGBUFFER_LENGTH;
+
+            //load N bytes data to bufTemp
+            fresult = f_read(pFile, bufTemp, nbytesBuf, &cnt);
+            if (!((fresult == FR_OK) && (cnt == nbytesBuf)))
+            {
+                xprintf(PSTR("fresult =  %u\n"), fresult);
+                xputs(PSTR("Error reading in fetch_block_func_x().\n"));
+            }
+
+            for (j=0; j<cnt; j+=2)
+            {
+                g_buf_func_x[g_index_func_x_write] = (uint16_t)bufTemp[j] + bufTemp[j+1]*256 ;
+                g_index_func_x_write++;
+                g_index_func_x_write %= RINGBUFFER_LENGTH;
+                g_filllevel_buf_func_x++;
+            }
             
-    fresult = f_lseek(pFile, offset);
-    if ((fresult == FR_OK) && (pFile->fptr == offset))
-    {
-        //num_of_load_x ranges from 0 to num_buf_load_x - 1
-        if ((num_of_load_x ==  num_buf_load_x - 1) && (last_load_x != 0))
-            nbytesBuf = last_load_x;
-        else 
-            nbytesBuf = FUNCTION_LENGTH;
-        
-        //load N bytes data to bufTemp
-        fresult = f_read(pFile, bufTemp, nbytesBuf, &cnt);
-        if (!((fresult == FR_OK) && (cnt == nbytesBuf)))
-        {
-            xprintf(PSTR("fresult =  %u\n"), fresult);
-            xputs(PSTR("Error reading in fetch_and_update_func_x().\n"));
+            //xprintf(PSTR("g_index_func_x_write =  %u\n"), g_index_func_x_write);
         }
-        
-        for (j=0; j<cnt; j+=2)
+        else
         {
-            g_buf_func_x[g_index_func_x_write] = (uint16_t)bufTemp[j] + bufTemp[j+1]*256 ;
-            g_index_func_x_write++;
-            g_index_func_x_write %= FUNCTION_LENGTH;
-            g_filllevel_buf_func_x++;
+    		xprintf(PSTR("fresult =  %u\n"), fresult);
+    		xputs(PSTR("Error seeking in fetch_block_func_x().\n"));
         }
-        
-        //xprintf(PSTR("g_index_func_x_write =  %u\n"), g_index_func_x_write);
     }
     else
-    {
-		xprintf(PSTR("fresult =  %u\n"), fresult);
-		xputs(PSTR("Error seeking in fetch_and_update_func_x().\n"));
-    }
+        xputs(PSTR("Function buffer for x is full\n"));
+
 }
 
 void update_funcCnt_y(void)
@@ -1880,125 +1902,125 @@ void update_funcCnt_y(void)
     int16_t Y_dac_val;
     int16_t temp_ADC_val;
     int32_t temp_index_y;
-    uint16_t Y_ADC2;
+    uint16_t adc_y;
 
     
-    if (!g_filllevel_buf_func_y)
+    if (g_filllevel_buf_func_y)
     {
-        xputs(PSTR("Ring buffer g_buf_func_y is empty\n"));
-        return;
-    }
-    
-    g_index_func_y_read++;
-    g_index_func_y_read %= FUNCTION_LENGTH;
-    g_filllevel_buf_func_y--;
-    
-    switch(g_mode_y)
-    {
-        case 3: // POS mode, use CH3 to set the frame position (pos ctrl, not vel ctrl)
-            Y_ADC2 = analogRead(3);   //Y_ADC2 ranges from 0-4095 when input 0-10V
-            
-            if (Y_ADC2>resolution_y)
-            	Y_ADC2 = resolution_y;
-            
-            //calculate the g_x
-            temp_index_y = ((int32_t)Y_ADC2 * g_y_max * 2 + resolution_y) / ((int32_t) resolution_y * 2) - 1;
-            
-            //check if too big
-            if (temp_index_y >= g_y_max)
-                temp_index_y = g_y_max - 1;
+        g_index_func_y_read++;
+        g_index_func_y_read %= RINGBUFFER_LENGTH;
+        g_filllevel_buf_func_y--;
 
-    		//or too small
-            if (temp_index_y <= 0)
-                temp_index_y = 0;
+        switch(g_mode_y)
+        {
+            case 3: // POS mode, use CH3 to set the frame position (pos ctrl, not vel ctrl)
+                adc_y = analogRead(3);   //adc_y ranges from 0-4095 when input 0-10V
 
-            g_y = temp_index_y;
-            g_index_frame = g_y*g_x_max + g_x;
-            break;
-            
-        case 4:
-            //only use temp_ADC_val as a temp variable, just not to create an additional one
-            temp_ADC_val = (Y_pos_index + g_buf_func_y[g_index_func_y_read]);
-            if (temp_ADC_val >= 0)
-                g_y = temp_ADC_val%g_y_max;
+                if (adc_y>g_resolution_y)
+                	adc_y = g_resolution_y;
 
-            //g_y should always be smaller than g_y_max
-            if (temp_ADC_val < 0)
-                g_y = g_y_max - ((abs(temp_ADC_val))%g_y_max) - 1;
+                //calculate the g_x
+                temp_index_y = ((int32_t)adc_y * g_y_max * 2 + g_resolution_y) / ((int32_t) g_resolution_y * 2) - 1;
 
-            g_index_frame = g_y*g_x_max + g_x;
-            break;
-    
-        case 5:   // in function DBG mode - show the function gen
-            //3277 is converted to 1V by DAC, we amplify function value so value 100 is about 1V 
-            Y_dac_val = g_buf_func_y[g_index_func_y_read]*33;
-            analogWrite(1, Y_dac_val); // make it a value in the range -32767 - 32767 (-10V - 10V)
-            break;
+                //check if too big
+                if (temp_index_y >= g_y_max)
+                    temp_index_y = g_y_max - 1;
+
+        		//or too small
+                if (temp_index_y <= 0)
+                    temp_index_y = 0;
+
+                g_y = temp_index_y;
+                g_index_frame = g_y*g_x_max + g_x;
+                break;
+
+            case 4:
+                //only use temp_ADC_val as a temp variable, just not to create an additional one
+                temp_ADC_val = (Y_pos_index + g_buf_func_y[g_index_func_y_read]);
+                if (temp_ADC_val >= 0)
+                    g_y = temp_ADC_val%g_y_max;
+
+                //g_y should always be smaller than g_y_max
+                if (temp_ADC_val < 0)
+                    g_y = g_y_max - ((abs(temp_ADC_val))%g_y_max) - 1;
+
+                g_index_frame = g_y*g_x_max + g_x;
+                break;
         
+            case 5:   // in function DBG mode - show the function gen
+                //3277 is converted to 1V by DAC, we amplify function value so value 100 is about 1V
+                Y_dac_val = g_buf_func_y[g_index_func_y_read]*33;
+                analogWrite(1, Y_dac_val); // make it a value in the range -32767 - 32767 (-10V - 10V)
+                break;
+
+        }
     }
+    else
+        xputs(PSTR("Function buffer for y is empty\n"));
+
 }
 
 
-// fetch_and_update_func_y()
-// Read more data from the given open file into the Y function buffer.
+// fetch_block_func_y()
+// Read a block from the given open file into the Y function buffer.
 //
-void fetch_and_update_func_y(FIL *pFile, uint8_t bReset, uint8_t num_of_load_y)
+void fetch_block_func_y(FIL *pFile, uint8_t bReset, uint8_t i_block_func_y)
 {
-    // num_of_load_y ranges from 0 to (num_buf_load_x - 1)
+    // i_block_func_y ranges from 0 to (g_nblocks_func_x - 1)
     // bReset==TRUE mean we need to load the first FUNCTIONLLENGTH of function data into buffer
     // because users always want the functions to start from the beginning every time they send start command
     uint16_t	cnt, j, offset;
     FRESULT 	fresult;
-    uint8_t 	bufTemp[FUNCTION_LENGTH];
+    uint8_t 	bufTemp[RINGBUFFER_LENGTH];
     uint16_t 	nbytesBuf;
 
-    //xprintf(PSTR("num_of_load_y =  %u\n"), num_of_load_y);        
-    if (g_filllevel_buf_func_y >= FUNCTION_LENGTH)
+    //xprintf(PSTR("i_block_func_y =  %u\n"), i_block_func_y);
+    if (g_filllevel_buf_func_y < RINGBUFFER_LENGTH)
     {
-        xputs(PSTR("Ring buffer g_buf_func_y is full.\n"));
-        return;
-    }
+        if (bReset)
+        {
+            g_filllevel_buf_func_y = 0;
+            g_index_func_y_read = 0;
+            g_index_func_y_write = 0;
+        }
         
-    if (bReset)
-    {
-        g_filllevel_buf_func_y = 0;
-        g_index_func_y_read = 0;
-        g_index_func_y_write = 0;
-    }
-    
-    offset = 512 + num_of_load_y * FUNCTION_LENGTH;
+        offset = NBYTES_HEADER + i_block_func_y * RINGBUFFER_LENGTH;
+
+        fresult = f_lseek(pFile, offset);
+        if ((fresult == FR_OK) && (pFile->fptr == offset))
+        {
+
+            if ((i_block_func_y ==  g_nblocks_func_y - 1) && (g_nbytes_final_block_y != 0))
+                nbytesBuf = g_nbytes_final_block_y;
+            else
+                nbytesBuf = RINGBUFFER_LENGTH;
+
+            //load 100 bytes data to bufTemp
+            fresult = f_read(pFile, bufTemp, nbytesBuf, &cnt);
+            if (!((fresult == FR_OK) && (cnt == nbytesBuf)))
+            {
+                xprintf(PSTR("fresult =  %u\n"), fresult);
+                xputs(PSTR("Error reading in fetch_block_func_y().\n"));
+            }
             
-    fresult = f_lseek(pFile, offset);
-    if ((fresult == FR_OK) && (pFile->fptr == offset))
-    {
-        
-        if ((num_of_load_y ==  num_buf_load_y - 1) && (last_load_y != 0))
-            nbytesBuf = last_load_y;
-        else 
-            nbytesBuf = FUNCTION_LENGTH;
-        
-        //load 100 bytes data to bufTemp
-        fresult = f_read(pFile, bufTemp, nbytesBuf, &cnt);
-        if (!((fresult == FR_OK) && (cnt == nbytesBuf)))
-        {
-            xprintf(PSTR("fresult =  %u\n"), fresult);
-            xputs(PSTR("Error reading in fetch_and_update_func_y().\n"));
+            for (j = 0; j< cnt; j+=2)
+            {
+                g_buf_func_y[g_index_func_y_write] = (uint16_t)bufTemp[j] + bufTemp[j+1]*256;
+                g_index_func_y_write++;
+                g_index_func_y_write %= RINGBUFFER_LENGTH;
+                g_filllevel_buf_func_y++;
+            }
+            //xprintf(PSTR("g_index_func_y_write =  %u\n"), g_index_func_y_write);
         }
-        
-        for (j = 0; j< cnt; j+=2)
+        else
         {
-            g_buf_func_y[g_index_func_y_write] = (uint16_t)bufTemp[j] + bufTemp[j+1]*256;
-            g_index_func_y_write++;
-            g_index_func_y_write %= FUNCTION_LENGTH;
-            g_filllevel_buf_func_y++;
+    		xprintf(PSTR("fresult =  %u\n"), fresult);
+    		xputs(PSTR("Error seeking in fetch_block_func_y().\n"));
         }
-        //xprintf(PSTR("g_index_func_y_write =  %u\n"), g_index_func_y_write);
     }
     else
-    {
-		xprintf(PSTR("fresult =  %u\n"), fresult);
-		xputs(PSTR("Error seeking in fetch_and_update_func_y().\n"));
-    }
+        xputs(PSTR("Function buffer for y is full.\n"));
+
 } 
 
 //synchronize the SD.mat from SD card to PC
@@ -2057,25 +2079,5 @@ void dump_mat(void)
     else 
         xputs(PSTR("Error f_open in SDInfo.mat.\n"));//end if (fresult == FR_OK
     
-}
-
-//external trigger mode for int2 to start playing pattern
-
-ISR(PORTK_INT0_vect)
-{
-	//set these to zero so that start at beginning of function - useful for putting in a set amount of expansion
-	g_index_func_x_read = 0;
-	g_index_func_y_read = 0;
-	g_b_running = TRUE;
-	g_display_count = 0;  //clear the display count
-	Reg_Handler(update_display, UPDATE_PERIOD, IRQ_UPDATE_DISPLAY, TRUE);
-	Reg_Handler(increment_index_x, UPDATE_PERIOD, IRQ_INCREMENT_INDEX_X, FALSE); //initilize the 2 and 3 priority interupts to a fast rate so that
-	Reg_Handler(increment_index_y, UPDATE_PERIOD, IRQ_INCREMENT_INDEX_Y, FALSE); // the countdown is fast until the setting of the next rate
-														//by the update_display interupt.
-	Reg_Handler(update_funcCnt_x, g_period_func_x, IRQ_INCREMENT_FUNC_X, TRUE);
-	Reg_Handler(update_funcCnt_y, g_period_func_y, IRQ_INCREMENT_FUNC_Y, TRUE);
-
-
-	xputs(PSTR("INT3 catches a rising edge trigger!\n"));
 }
 

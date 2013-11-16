@@ -24,17 +24,25 @@
 #define ISR_INCREMENT_FUNC_X	4
 #define ISR_INCREMENT_FUNC_Y	5
 
+#define FRAMEFROMXY(x,y)    ((y)*g_x_max + (x))
+#define MIN(x,y)            ((x)<(y)?(x):(y))
+#define MAX(x,y)            ((x)>(y)?(x):(y))
+#define CLIP(x,lo,hi)       MAX((lo),MIN((x),(hi)))
 
-//globals - for now! - try to cut down on these
+#define DAQRESOLUTION       ((1<<12)-1)
+
+// Globals - try to cut down on these.
 volatile uint8_t  g_b_running = FALSE;
 uint8_t           g_b_laseractive = FALSE;
+uint8_t           g_b_quiet_mode=TRUE;
 
 uint8_t           g_display_count = 0;
-uint16_t          g_resolution_x = 4095;
-uint16_t          g_resolution_y = 4095;
+uint16_t          g_adc_x_max = DAQRESOLUTION;	// 12 bit ADC
+uint16_t          g_adc_y_max = DAQRESOLUTION;
 
-uint16_t          g_x_max, g_y_max;  //the max index for x and y
-volatile uint16_t g_x, g_y; // the current index of x and y
+uint16_t          g_x_max=1, g_y_max=1;  //the max index for x and y
+volatile uint16_t g_x, g_y;          // the current index of x and y
+int16_t           g_x_initial, g_y_initial;  // The initial position set by the user.
 
 uint8_t           gs_value, g_bytes_per_panel_frame, g_row_compress, g_ident_compress;
 uint8_t           g_num_panels = 0;
@@ -59,31 +67,27 @@ uint16_t          g_nblocks_func_y = 1;
 uint16_t          g_nbytes_final_block_x = 0;	// Length of the final block.
 uint16_t          g_nbytes_final_block_y = 0;
 
-uint16_t          g_id_func_x = 0;
-uint16_t          g_id_func_y = 0;
 volatile uint8_t  g_b_default_func_x = TRUE;
 volatile uint8_t  g_b_default_func_y = TRUE;
+uint16_t          g_id_func_x = 0;
+uint16_t          g_id_func_y = 0;
 uint16_t          g_period_func_x = FUNCTION_PERIOD;
 uint16_t          g_period_func_y = FUNCTION_PERIOD;
 
 uint8_t           g_laserpattern[125];
 int8_t            g_gain_x, g_gain_y;
 int8_t            g_bias_x, g_bias_y;
-int8_t            g_xrate_greater_yrate=FALSE;
-int16_t           X_pos_index, Y_pos_index;
+int8_t            g_b_xrate_greater_yrate=FALSE;
 uint16_t          g_trigger_rate = 200;
 
-
-FIL               file1, file2, file3, file4;       // File objects
-//file1 pattern file;
-//file2 function file for x channel
-//file3 function file for y channel,
-//file4 for SD.mat or arena config file
+FIL               g_file_pattern;        //g_file_pattern pattern file;
+FIL               g_file_func_x;        //g_file_func_x function file for x channel
+FIL               g_file_func_y;        //g_file_func_y function file for y channel,
+FIL               g_file_arenaconfig;   //g_file_arenaconfig for SD.mat or arena config file
 
 //max frame size = 32bpp * 4rows * 12col = 1536
-
-uint8_t  g_adr_from_panel[129]; // panel twi address mapping, we can have same address in different channels
-uint8_t  g_quiet_mode=TRUE;
+uint8_t           g_ch_from_panel[129];
+uint8_t           g_adr_from_panel[129]; // panel twi address mapping, we can have same address in different channels
 
 
 
@@ -140,8 +144,8 @@ ISR(PORTK_INT0_vect)
 	Reg_Handler(update_display,    UPDATE_PERIOD,   ISR_UPDATE_DISPLAY,    TRUE);
 	Reg_Handler(increment_index_x, UPDATE_PERIOD,   ISR_INCREMENT_INDEX_X, FALSE); //initialize ISRs to a fast rate so that the countdown is fast until the
 	Reg_Handler(increment_index_y, UPDATE_PERIOD,   ISR_INCREMENT_INDEX_Y, FALSE); // setting of the next rate by the update_display interrupt.
-	Reg_Handler(update_funcCnt_x,  g_period_func_x, ISR_INCREMENT_FUNC_X,  TRUE);
-	Reg_Handler(update_funcCnt_y,  g_period_func_y, ISR_INCREMENT_FUNC_Y,  TRUE);
+	Reg_Handler(update_position_x,  g_period_func_x, ISR_INCREMENT_FUNC_X,  TRUE);
+	Reg_Handler(update_position_y,  g_period_func_y, ISR_INCREMENT_FUNC_Y,  TRUE);
 
 
 	xputs(PSTR("INT3 catches a rising edge trigger!\n"));
@@ -219,7 +223,7 @@ int main(void)
     
     
     //initializations
-    X_pos_index = Y_pos_index = g_x = g_y = 0;
+    g_x_initial = g_y_initial = g_x = g_y = 0;
     g_bias_x = g_bias_y = 0;
     g_gain_x = g_gain_y = 0;
     g_mode_x = g_mode_y = 0;
@@ -233,9 +237,9 @@ int main(void)
     	// create default panel mapping
         for (b1 = 0; b1 <= 128; b1++)
         {
-            chMap[b1] = b1 % 4;
-            if (b1 && (chMap[b1] == 0))
-                chMap[b1] = 4;
+            g_ch_from_panel[b1] = b1 % 4;
+            if (b1 && (g_ch_from_panel[b1] == 0))
+                g_ch_from_panel[b1] = 4;
             g_adr_from_panel[b1] = b1; // panel address identity mapping
         }
     } 
@@ -243,7 +247,7 @@ int main(void)
     {
         for (b1 = 0; b1 <= 128; b1++)
         {
-            chMap[b1] = eeprom_read_byte(arena_config + b1);
+            g_ch_from_panel[b1] = eeprom_read_byte(arena_config + b1);
             g_adr_from_panel[b1] = b1; // panel address identity mapping
         }
     }
@@ -369,14 +373,14 @@ int main(void)
                 if (g_index_frame != index_frame_prev)
                 {
                     index_frame_prev = g_index_frame; //update the 'old' frame number
-                    fetch_and_display_frame(&file1, g_index_frame, g_x, g_y);
+                    fetch_and_display_frame(&g_file_pattern, g_index_frame, g_x, g_y);
                 }
                 
                 //g_filllevel_buf_func_x in word, 2 bytes.
                 if (!g_b_default_func_x && (g_filllevel_buf_func_x <= RINGBUFFER_LENGTH/4) && (g_index_func_x_read != index_func_x_read_prev))
                 {                    
                     index_func_x_read_prev = g_index_func_x_read;
-                    fetch_block_func_x(&file2, FALSE, g_iblock_func_x);
+                    fetch_block_func_x(&g_file_func_x, FALSE, g_iblock_func_x);
                     g_iblock_func_x = (g_iblock_func_x+1) % g_nblocks_func_x;
                     //xprintf(PSTR("g_filllevel_buf_func_x=%u, g_index_func_x_read=%u\n"), g_filllevel_buf_func_x, g_index_func_x_read);
                 }
@@ -384,7 +388,7 @@ int main(void)
                 if (!g_b_default_func_y && (g_filllevel_buf_func_y <= RINGBUFFER_LENGTH/4) && (g_index_func_y_read != index_func_y_read_prev))
                 {                    
                     index_func_y_read_prev = g_index_func_y_read;
-                    fetch_block_func_y(&file3, FALSE, g_iblock_func_y);
+                    fetch_block_func_y(&g_file_func_y, FALSE, g_iblock_func_y);
                     g_iblock_func_y = (g_iblock_func_y + 1)%g_nblocks_func_y;
                     //xprintf(PSTR("g_filllevel_buf_func_y=%u, g_index_func_y_read=%u\n"), g_filllevel_buf_func_y, g_index_func_y_read);
                 }
@@ -445,14 +449,14 @@ void start_running(void)
     Reg_Handler(increment_index_y, UPDATE_PERIOD, ISR_INCREMENT_INDEX_Y, FALSE); // the countdown is fast until the setting of the next rate
                                                         //by the update_display interupt.
     if (g_b_default_func_x)
-        Reg_Handler(update_funcCnt_x, g_period_func_x, ISR_INCREMENT_FUNC_X, FALSE);
+        Reg_Handler(update_position_x, g_period_func_x, ISR_INCREMENT_FUNC_X, FALSE);
     else
-        Reg_Handler(update_funcCnt_x, g_period_func_x, ISR_INCREMENT_FUNC_X, TRUE);
+        Reg_Handler(update_position_x, g_period_func_x, ISR_INCREMENT_FUNC_X, TRUE);
 
     if (g_b_default_func_y)
-        Reg_Handler(update_funcCnt_y, g_period_func_y, ISR_INCREMENT_FUNC_Y, FALSE);
+        Reg_Handler(update_position_y, g_period_func_y, ISR_INCREMENT_FUNC_Y, FALSE);
     else
-        Reg_Handler(update_funcCnt_y, g_period_func_y, ISR_INCREMENT_FUNC_Y, TRUE);
+        Reg_Handler(update_position_y, g_period_func_y, ISR_INCREMENT_FUNC_Y, TRUE);
 }
 
 
@@ -481,12 +485,12 @@ void handle_message_length_1(uint8_t *msg_buffer)
             Reg_Handler(update_display, UPDATE_PERIOD, ISR_UPDATE_DISPLAY, FALSE);
             Reg_Handler(increment_index_x, UPDATE_PERIOD, ISR_INCREMENT_INDEX_X, FALSE);
             Reg_Handler(increment_index_y, UPDATE_PERIOD, ISR_INCREMENT_INDEX_Y, FALSE);
-            Reg_Handler(update_funcCnt_x, g_period_func_x, ISR_INCREMENT_FUNC_X, FALSE);
-            Reg_Handler(update_funcCnt_y, g_period_func_y, ISR_INCREMENT_FUNC_Y, FALSE);
+            Reg_Handler(update_position_x, g_period_func_x, ISR_INCREMENT_FUNC_X, FALSE);
+            Reg_Handler(update_position_y, g_period_func_y, ISR_INCREMENT_FUNC_Y, FALSE);
             if (!g_b_default_func_x)
-                fetch_block_func_x(&file2, TRUE, 0);
+                fetch_block_func_x(&g_file_func_x, TRUE, 0);
             if (!g_b_default_func_y)
-                fetch_block_func_y(&file3, TRUE, 0);
+                fetch_block_func_y(&g_file_func_y, TRUE, 0);
             break;
             
         case 0x35: //stop display & trigger - same as regular, but this also does trigger
@@ -495,8 +499,8 @@ void handle_message_length_1(uint8_t *msg_buffer)
             Reg_Handler(update_display, UPDATE_PERIOD, ISR_UPDATE_DISPLAY, FALSE);
             Reg_Handler(increment_index_x, UPDATE_PERIOD, ISR_INCREMENT_INDEX_X, FALSE);
             Reg_Handler(increment_index_y, UPDATE_PERIOD, ISR_INCREMENT_INDEX_Y, FALSE);
-            Reg_Handler(update_funcCnt_x, g_period_func_x, ISR_INCREMENT_FUNC_X, FALSE);
-            Reg_Handler(update_funcCnt_y, g_period_func_y, ISR_INCREMENT_FUNC_Y, FALSE);
+            Reg_Handler(update_position_x, g_period_func_x, ISR_INCREMENT_FUNC_X, FALSE);
+            Reg_Handler(update_position_y, g_period_func_y, ISR_INCREMENT_FUNC_Y, FALSE);
             Reg_Handler(toggle_trigger, OVERFLOW_PERIOD/g_trigger_rate, ISR_TOGGLE_TRIGGER, FALSE); //turn off the trigger toggle
             digitalWrite(DIO_TRIGGEROUT,LOW);    //set the trigger output to low
             break;
@@ -560,21 +564,21 @@ void handle_message_length_1(uint8_t *msg_buffer)
         case 0x16:   //show the bus number
             for (i = 1; i <= 128; i++)
             {
-                CMD[0] = 0xFE; CMD[1] = chMap[i];
+                CMD[0] = 0xFE; CMD[1] = g_ch_from_panel[i];
                 i2cMasterSend(i, 2, CMD);
             }
             break;
             
         case 0x17:  // turn on quiet_mode, no message sent out
-            g_quiet_mode = TRUE;
+            g_b_quiet_mode = TRUE;
             break;
             
         case 0x18:  // turn off quiet_mode, essage sent out
-            g_quiet_mode = FALSE;
+            g_b_quiet_mode = FALSE;
             break;
               
         case 0x19:  // update GUI information
-            xprintf(PSTR("update: %d %d %d %d %d %d %d %d:\n"), g_gain_x, g_bias_x, X_pos_index, g_mode_x, g_gain_y, g_bias_y, Y_pos_index, g_mode_y);
+            xprintf(PSTR("update: %d %d %d %d %d %d %d %d:\n"), g_gain_x, g_bias_x, g_x_initial, g_mode_x, g_gain_y, g_bias_y, g_y_initial, g_mode_y);
           break;
             
         case 0x21:    // working mode 1 = default mode = controller mode
@@ -606,10 +610,10 @@ void handle_message_length_1(uint8_t *msg_buffer)
                tmp_y += analogRead(3);
                _delay_ms(5);
             };
-            g_resolution_x  =  tmp_x / n_sample;
-            g_resolution_y  =  tmp_y / n_sample;
-            xprintf(PSTR("resolution_x =  %d:\n"), g_resolution_x);
-            xprintf(PSTR("resolution_y =  %d:\n"), g_resolution_y);
+            g_adc_x_max  =  tmp_x / n_sample;
+            g_adc_y_max  =  tmp_y / n_sample;
+            xprintf(PSTR("resolution_x =  %d:\n"), g_adc_x_max);
+            xprintf(PSTR("resolution_y =  %d:\n"), g_adc_y_max);
             break;
     
         default: i2cMasterSend(0x00, 8, ERROR_CODES[1]);
@@ -713,7 +717,7 @@ void handle_message_length_3(uint8_t *msg_buffer)
             
             break;
             
-        case 0x10:
+        case 0x10:   // set_mode()
             g_mode_x = msg_buffer[1];
             g_mode_y = msg_buffer[2];
             //put in an error message if value is not 0, 1, or 2.
@@ -736,20 +740,20 @@ void handle_message_length_3(uint8_t *msg_buffer)
         case 0x25: // this is a set function generator frequency
             funcX_freq = (uint16_t) msg_buffer[1] + (256*msg_buffer[2]);
             g_period_func_x = OVERFLOW_PERIOD/funcX_freq;
-            if (!g_quiet_mode)
+            if (!g_b_quiet_mode)
                 xprintf(PSTR("function X update frequency = %u.\n"), funcX_freq);
             break;
             
         case 0x30: // this is a set function generator frequency
             funcY_freq = (uint16_t) msg_buffer[1] + (256*msg_buffer[2]);
             g_period_func_y = OVERFLOW_PERIOD/funcY_freq;
-            if (!g_quiet_mode)
+            if (!g_b_quiet_mode)
                 xprintf(PSTR("function Y update frequency = %u.\n"), funcY_freq);
             break;
             
-        case 0x35: //set resolution_x and g_resolution_y
-            g_resolution_x = (uint32_t)msg_buffer[1] * 4095/10;
-            g_resolution_y = (uint32_t)msg_buffer[2] * 4095/10;
+        case 0x35: //set resolution_x and g_adc_y_max
+            g_adc_x_max = (uint32_t)msg_buffer[1] * DAQRESOLUTION/10;
+            g_adc_y_max = (uint32_t)msg_buffer[2] * DAQRESOLUTION/10;
             break;
             
         default: i2cMasterSend(0x00, 8, ERROR_CODES[3]);
@@ -785,14 +789,14 @@ void handle_message_length_5(uint8_t *msg_buffer)
             g_x = (uint8_t)msg_buffer[1] + (256*(uint8_t)msg_buffer[2]);
             g_y = (uint8_t)msg_buffer[3] + (256*(uint8_t)msg_buffer[4]);
             
-            X_pos_index = g_x; // these only used during position func. control mode, but
-            Y_pos_index = g_y; //update here should not slow things down much and no need for sep. function.
+            g_x_initial = g_x; // these only used during position func. control mode, but
+            g_y_initial = g_y; //update here should not slow things down much and no need for sep. function.
             g_index_frame = g_y* g_x_max + g_x;
             g_display_count = 0;  //clear the display count
-            if (!g_quiet_mode)
+            if (!g_b_quiet_mode)
                 xprintf(PSTR("set_position: g_x= %u,  g_y= %u, and g_index_frame= %u\n"), g_x, g_y, g_index_frame);
 
-            fetch_and_display_frame(&file1, g_index_frame, g_x, g_y);
+            fetch_and_display_frame(&g_file_pattern, g_index_frame, g_x, g_y);
             break;
 
         case 0x71:
@@ -801,7 +805,7 @@ void handle_message_length_5(uint8_t *msg_buffer)
             g_bias_x = msg_buffer[2];
             g_gain_y = msg_buffer[3];
             g_bias_y = msg_buffer[4];
-            if (!g_quiet_mode)
+            if (!g_b_quiet_mode)
                 xprintf(PSTR("set_gain_bias: gain_x= %d,  bias_x= %d, gain_y= %d, bias_y=%d\n"), g_gain_x, g_bias_x, g_gain_y, g_bias_y);
             
             break;
@@ -842,7 +846,7 @@ void handle_message_length_63(uint8_t *msg_buffer)
     }
     
     
-    if (!g_quiet_mode)
+    if (!g_b_quiet_mode)
         xputs(PSTR("Success set the new laser pattern.\n"));
 
 }
@@ -895,7 +899,7 @@ void fetch_and_display_frame(FIL *pFile, uint16_t index_frame, uint16_t Xindex, 
     uint16_t len, cnt, buff_index;
     uint32_t offset;
     FRESULT fresult;
-    uint16_t X_dac_val, Y_dac_val;
+    uint16_t dac_x, dac_y;
     uint8_t sreg = SREG;
     uint8_t block_per_frame;
     uint8_t tempVal, bitIndex, arrayIndex;
@@ -1001,7 +1005,7 @@ void fetch_and_display_frame(FIL *pFile, uint16_t index_frame, uint16_t Xindex, 
         }
         else
         {
-            if (!g_quiet_mode)
+            if (!g_b_quiet_mode)
             {
                 xputs(PSTR("Error in f_read in fetch_and_display_frame!\n"));
                 xprintf(PSTR("RES = %u, index_frame= %u, cnt= %u\n"), fresult, index_frame, cnt);
@@ -1011,7 +1015,7 @@ void fetch_and_display_frame(FIL *pFile, uint16_t index_frame, uint16_t Xindex, 
     else
     {
         
-        if (!g_quiet_mode)
+        if (!g_b_quiet_mode)
         {
             xputs(PSTR("Error in f_lseek in fetch_and_display_frame!\n"));
             xprintf(PSTR("RES = %u, index_frame= %u, offset = %lu\n"), fresult, index_frame, offset);
@@ -1021,15 +1025,15 @@ void fetch_and_display_frame(FIL *pFile, uint16_t index_frame, uint16_t Xindex, 
     //update analog out
     if (g_mode_x != 5)
     {
-        X_dac_val = ((uint32_t)Xindex + 1)*32767/g_x_max;
-        analogWrite(0, X_dac_val); // make it a value in the range 0 - 32767 (0 - 10V)
+        dac_x = ((uint32_t)Xindex + 1)*32767/g_x_max;
+        analogWrite(0, dac_x); // make it a value in the range 0 - 32767 (0 - 10V)
     }
 
     
     if (g_mode_y != 5)
     {
-        Y_dac_val = ((uint32_t)Yindex + 1)*32767/g_y_max;
-        analogWrite(1, Y_dac_val); // make it a value in the range 0 - 32767 (0 - 10V)
+        dac_y = ((uint32_t)Yindex + 1)*32767/g_y_max;
+        analogWrite(1, dac_y); // make it a value in the range 0 - 32767 (0 - 10V)
     }
 
     
@@ -1051,13 +1055,40 @@ void fetch_and_display_frame(FIL *pFile, uint16_t index_frame, uint16_t Xindex, 
 
 }
 
+
+// set_rates()
+// Set an ISR to perform vx and vy.
+//
+void set_rates(int16_t xRate, int16_t yRate)
+{
+    if (xRate > 0)
+        Update_Reg_Handler(increment_index_x, (uint32_t)OVERFLOW_PERIOD/abs(xRate), ISR_INCREMENT_INDEX_X, TRUE);
+    else if (xRate < 0)
+        Update_Reg_Handler(decrement_index_x, (uint32_t)OVERFLOW_PERIOD/abs(xRate), ISR_INCREMENT_INDEX_X, TRUE);
+    else // xRate == 0
+        Update_Reg_Handler(decrement_index_x, UPDATE_PERIOD, ISR_INCREMENT_INDEX_X, FALSE);
+
+
+    if (yRate > 0)
+        Update_Reg_Handler(increment_index_y, (uint32_t)OVERFLOW_PERIOD/abs(yRate), ISR_INCREMENT_INDEX_Y, TRUE);
+    else if (yRate < 0)
+        Update_Reg_Handler(decrement_index_y, (uint32_t)OVERFLOW_PERIOD/abs(yRate), ISR_INCREMENT_INDEX_Y, TRUE);
+    else // yRate == 0
+        Update_Reg_Handler(decrement_index_y, UPDATE_PERIOD, ISR_INCREMENT_INDEX_Y, FALSE);
+
+}
+
+
+// update_display()
+// This function calculates and sets the x,y rates.
+//
 void update_display(void)
 {
+    static int16_t x, y;
     int16_t xRate = 0;
     int16_t yRate = 0;
-    int16_t X_ADC1, Y_ADC1; 
+    int16_t adc_x, adc_y;
     int16_t val_prev;
-    int16_t x, y;
 
     //there are six modes:
     // 0 - Open loop, 
@@ -1075,10 +1106,10 @@ void update_display(void)
             break;
 
         case 1: //closed loop, use CH0 - CH1 to set x rate
-            X_ADC1 = analogRead(0)/4;  // 1 volt = 102 frames/sec
+            adc_x = analogRead(0)/4;  // 1 volt = 102.4 frames/sec
             val_prev = x; //the previous value
-            x = ( 6*val_prev + 4*X_ADC1 )/10;   //this is a 60% old value, 40% new value smoother
-            xRate = (int16_t)((int32_t)(x*g_gain_x)/10 + 5*g_bias_x)/2;  //x can go as high as 4095, g_gain_x 100fiu and g_bias_x 250
+            x = ( 6*val_prev + 4*adc_x )/10;   // A fast exponentially weighted moving average.
+            xRate = (int16_t)((int32_t)(x*g_gain_x)/10 + 5*g_bias_x)/2;  //x can go as high as DAQRESOLUTION, g_gain_x 100fiu and g_bias_x 250
             
             //set a frame rate limit 256fps
             //if (xRate >256)
@@ -1088,9 +1119,9 @@ void update_display(void)
             break;
 
         case 2: //closed loop w bias - use CH0 - CH1, and function gen. to set x rate
-            X_ADC1 = analogRead(0)/4; // 1 volt = 102
+            adc_x = analogRead(0)/4; // 1 volt = 102
             val_prev = x; //the previous value
-            x = ( 6*val_prev + 4*X_ADC1 )/10;   //this is a 60% old value, 40% new value smoother
+            x = ( 6*val_prev + 4*adc_x )/10;   // A fast exponentially weighted moving average.
             //add in the bias to CL mode on ch X
             xRate = (int16_t)((int32_t)(x*g_gain_x)/10 + 2*g_buf_func_x[g_index_func_x_read] + 5*g_bias_x)/2;
             break;
@@ -1118,10 +1149,10 @@ void update_display(void)
             break;
 
         case 1: //closed loop, use CH2 - CH3 to set y rate
-            Y_ADC1 = analogRead(1)/4; // 1 volt = 102fps
+            adc_y = analogRead(1)/4; // 1 volt = 102.4 fps
             val_prev = y; //the previous value
-            y = ( 6*val_prev + 4*Y_ADC1)/10;   //this is a 60% old value, 40% new value smoother
-            yRate = (int16_t)((int32_t)(y*g_gain_y)/10 + 5*g_bias_y)/2; //y can go as high as 4095, g_gain_y 100, and g_bias_y 250.
+            y = ( 6*val_prev + 4*adc_y)/10;   //this is a 60% old value, 40% new value smoother
+            yRate = (int16_t)((int32_t)(y*g_gain_y)/10 + 5*g_bias_y)/2; //y can go as high as DAQRESOLUTION, g_gain_y 100, and g_bias_y 250.
             
             //set a frame rate limit 256fps
             //if (yRate > 256)
@@ -1132,11 +1163,11 @@ void update_display(void)
             break;
 
         case 2: //closed loop w bias - use CH2 - CH3, and function gen. to set y rate
-            Y_ADC1 = analogRead(1)/4; // 1 volt = 102
+            adc_y = analogRead(1)/4; // 1 volt = 102
             val_prev = y; //the previous value
-            y = ( 6*val_prev + 4*Y_ADC1)/10;   //this is a 60% old value, 40% new value smoother
+            y = ( 6*val_prev + 4*adc_y)/10;   //this is a 60% old value, 40% new value smoother
             //add in the bias to CL mode on ch Y
-            yRate = (int16_t)((int32_t)(y*g_gain_y)/10 + 2*g_buf_func_y[g_index_func_y_read] + 5*g_bias_y)/2; //y can go as high as 4095
+            yRate = (int16_t)((int32_t)(y*g_gain_y)/10 + 2*g_buf_func_y[g_index_func_y_read] + 5*g_bias_y)/2; //y can go as high as DAQRESOLUTION
             break;
 
         case 3:
@@ -1161,23 +1192,8 @@ void update_display(void)
     if (!g_b_running)
         xRate = yRate = 0;
     
-
-    if (xRate > 0)
-        Update_Reg_Handler(increment_index_x, (uint32_t)OVERFLOW_PERIOD/abs(xRate), ISR_INCREMENT_INDEX_X, TRUE);
-    else if (xRate < 0)
-        Update_Reg_Handler(decrement_index_x, (uint32_t)OVERFLOW_PERIOD/abs(xRate), ISR_INCREMENT_INDEX_X, TRUE);
-    else     //xRate == 0
-        Update_Reg_Handler(decrement_index_x, (UPDATE_PERIOD), ISR_INCREMENT_INDEX_X, FALSE);
-    
-    
-    if (yRate > 0)
-        Update_Reg_Handler(increment_index_y, (uint32_t)OVERFLOW_PERIOD/abs(yRate), ISR_INCREMENT_INDEX_Y, TRUE);
-    else if (yRate < 0)
-        Update_Reg_Handler(decrement_index_y, (uint32_t)OVERFLOW_PERIOD/abs(yRate), ISR_INCREMENT_INDEX_Y, TRUE);
-    else      //yRate == 0
-        Update_Reg_Handler(decrement_index_y, (UPDATE_PERIOD), ISR_INCREMENT_INDEX_Y, FALSE);
-    
-    g_xrate_greater_yrate = (xRate >= yRate);
+    g_b_xrate_greater_yrate = (xRate >= yRate);
+    set_rates(xRate, yRate);
 }
 
 
@@ -1187,9 +1203,9 @@ void increment_index_x(void)
     g_x++;
     g_x %= g_x_max;
     
-    g_index_frame = g_y*g_x_max + g_x;
+    g_index_frame = FRAMEFROMXY(g_x, g_y);
     
-    if (g_xrate_greater_yrate)
+    if (g_b_xrate_greater_yrate)
     	g_display_count++;
 }
 
@@ -1199,9 +1215,9 @@ void increment_index_y(void)
     g_y++;
     g_y %= g_y_max;
     
-    g_index_frame = g_y*g_x_max + g_x;
+    g_index_frame = FRAMEFROMXY(g_x, g_y);
     
-    if (!g_xrate_greater_yrate)
+    if (!g_b_xrate_greater_yrate)
     	g_display_count++;
 }
 
@@ -1214,8 +1230,8 @@ void decrement_index_x(void)
     else
         g_x--;
     
-    g_index_frame = g_y*g_x_max + g_x;
-    if (g_xrate_greater_yrate)
+    g_index_frame = FRAMEFROMXY(g_x, g_y);
+    if (g_b_xrate_greater_yrate)
     	g_display_count++;
 }
 
@@ -1227,8 +1243,8 @@ void decrement_index_y(void)
     else
         g_y--;
     
-    g_index_frame = g_y*g_x_max + g_x;
-    if (!g_xrate_greater_yrate)
+    g_index_frame = FRAMEFROMXY(g_x, g_y);
+    if (!g_b_xrate_greater_yrate)
     	g_display_count++;
 }
 
@@ -1256,10 +1272,10 @@ void set_pattern(uint8_t pat_num)
    
     
     
-    res = f_open(&file1, str, FA_OPEN_EXISTING | FA_READ);
+    res = f_open(&g_file_pattern, str, FA_OPEN_EXISTING | FA_READ);
     if (res == FR_OK)
     {
-        res = f_read(&file1, bufHeader, NBYTES_HEADER, &cnt); // read the 10 byte header info block
+        res = f_read(&g_file_pattern, bufHeader, NBYTES_HEADER, &cnt); // read the 10 byte header info block
         if ((res == FR_OK) && (cnt == NBYTES_HEADER))
         {
             // get the header info
@@ -1287,18 +1303,18 @@ void set_pattern(uint8_t pat_num)
             g_index_frame = 0;
             g_b_running = FALSE;
             g_display_count = 0;  //clear the display count
-            if (!g_quiet_mode)
+            if (!g_b_quiet_mode)
             {
                 xprintf(PSTR("Setting pattern %u:\n"), pat_num);
                 xprintf(PSTR("  g_x_max = %u\n  g_y_max = %u\n  g_num_panels = %u\n  gs_value = %u\n row_compression = %u\n"),
                         g_x_max, g_y_max, g_num_panels, gs_value, g_row_compress);
             }
-            fetch_and_display_frame(&file1, g_index_frame, g_x, g_y);
+            fetch_and_display_frame(&g_file_pattern, g_index_frame, g_x, g_y);
         }
         else
         	xputs(PSTR("Error reading in pattern file\n"));
         
-        f_close(&file1);
+        f_close(&g_file_pattern);
     }
     else
     	xputs(PSTR("Error opening pattern file\n"));
@@ -1319,22 +1335,22 @@ void set_hwConfig(uint8_t config_num)
     else
         xputs(PSTR("config_num is too big.\n"));
             
-    res = f_open(&file4, str, FA_OPEN_EXISTING | FA_READ);
+    res = f_open(&g_file_arenaconfig, str, FA_OPEN_EXISTING | FA_READ);
     if (res == FR_OK)
     {
         // looks good, read in the 128 byte panel mapping info
-        res = f_read(&file4, bufTemp, 128, &cnt);
+        res = f_read(&g_file_arenaconfig, bufTemp, 128, &cnt);
         if ((res == FR_OK) && (cnt == 128))
         {
             //copy to the mapping tables
             for (b1 = 1; b1 <= 128; b1++)
             {
-                chMap[b1] = bufTemp[b1-1]; // panel 0 doesn't exist
+                g_ch_from_panel[b1] = bufTemp[b1-1]; // panel 0 doesn't exist
                 eeprom_write_byte(arena_config + b1, bufTemp[b1-1]);
             }
             eeprom_write_byte(arena_config, 0x00); //Mark arena configuration file in EEPROM
         }
-        f_close(&file4);
+        f_close(&g_file_arenaconfig);
         xputs(PSTR("Successfully load the hardware config file to EEPROM\n"));
     }
     else
@@ -1357,7 +1373,7 @@ void benchmark_pattern(void)
     timer_coarse_tic();
     
     for(frame_ind = 0; frame_ind < num_frames; frame_ind++)
-        fetch_and_display_frame(&file1, frame_ind, g_x, g_y);
+        fetch_and_display_frame(&g_file_pattern, frame_ind, g_x, g_y);
     
     bench_time = timer_coarse_toc();
     frame_rate = ((uint32_t)num_frames*1000)/bench_time;
@@ -1388,7 +1404,7 @@ void i2cMasterSend(uint8_t panel, uint8_t len, uint8_t *data)
     else
     {
         // look up the actual panel address and channel
-        ch = chMap[panel];
+        ch = g_ch_from_panel[panel];
         addr = g_adr_from_panel[panel];
         if (ch != 0)
         {
@@ -1430,10 +1446,10 @@ void set_default_func(uint8_t channel)
     switch (channel)
     {
         case 1:
-            if (!g_quiet_mode)
+            if (!g_b_quiet_mode)
                 xputs(PSTR("Setting default function for X.\n"));
 
-            //Reg_Handler(update_funcCnt_x, g_period_func_x, ISR_INCREMENT_FUNC_X, FALSE);// disable ISR
+            //Reg_Handler(update_position_x, g_period_func_x, ISR_INCREMENT_FUNC_X, FALSE);// disable ISR
             g_id_func_x = 0;
             g_b_default_func_x = TRUE;
             g_nbytes_func_x = RINGBUFFER_LENGTH;
@@ -1444,13 +1460,13 @@ void set_default_func(uint8_t channel)
             g_index_func_x_read = 0;
             g_nblocks_func_x = 1;
             g_nbytes_final_block_x = 0;
-            //Reg_Handler(update_funcCnt_x, g_period_func_x, ISR_INCREMENT_FUNC_X, TRUE);// enable ISR
+            //Reg_Handler(update_position_x, g_period_func_x, ISR_INCREMENT_FUNC_X, TRUE);// enable ISR
             break;
         case 2:
-            if (!g_quiet_mode)
+            if (!g_b_quiet_mode)
                 xputs(PSTR("Setting default function for Y.\n"));
 
-            //Reg_Handler(update_funcCnt_y, g_period_func_y, ISR_INCREMENT_FUNC_Y, FALSE);// disable ISR
+            //Reg_Handler(update_position_y, g_period_func_y, ISR_INCREMENT_FUNC_Y, FALSE);// disable ISR
             g_id_func_y = 0;
             g_b_default_func_y = TRUE;
             g_nbytes_func_y = RINGBUFFER_LENGTH;
@@ -1461,7 +1477,7 @@ void set_default_func(uint8_t channel)
             g_index_func_y_read = 0;
             g_nblocks_func_y = 1;
             g_nbytes_final_block_y = 0;
-            //Reg_Handler(update_funcCnt_y, g_period_func_y, ISR_INCREMENT_FUNC_Y, TRUE);// enable ISR
+            //Reg_Handler(update_position_y, g_period_func_y, ISR_INCREMENT_FUNC_Y, TRUE);// enable ISR
             break;
         default:
             xputs(PSTR("Function channel number must be 1 for x, or 2 for y.\n"));
@@ -1480,7 +1496,7 @@ void set_pos_func(uint8_t channel, uint8_t id_func)
     //uint8_t func_name_y[100];
     //uint8_t func_name_len;
     FRESULT fresult=FR_INVALID_OBJECT;
-    FIL		*pFile=NULL;	// The file we're working on: &file2 or &file3.
+    FIL		*pFile=NULL;	// The file we're working on: &g_file_func_x or &g_file_func_y.
     uint8_t bufHeader[NBYTES_HEADER];
     
     
@@ -1493,9 +1509,9 @@ void set_pos_func(uint8_t channel, uint8_t id_func)
     {
         case 1:    //channel x
             //read the 512 byte header block and send back the function name
-            //Reg_Handler(update_funcCnt_x, g_period_func_x, ISR_INCREMENT_FUNC_X, FALSE);//disable ISR
+            //Reg_Handler(update_position_x, g_period_func_x, ISR_INCREMENT_FUNC_X, FALSE);//disable ISR
             
-            pFile = &file2;
+            pFile = &g_file_func_x;
             fresult = f_open(pFile, str, FA_OPEN_EXISTING | FA_READ);
             if (fresult == FR_OK)
             {
@@ -1522,7 +1538,7 @@ void set_pos_func(uint8_t channel, uint8_t id_func)
                     g_b_running = FALSE;
                     g_display_count = 0;
 
-                    if (!g_quiet_mode)
+                    if (!g_b_quiet_mode)
                     {
                         xprintf(PSTR("Setting position function %u for X\n"), id_func);
 						//xprintf(PSTR("fun X: %s\n function X size: %lu bytes\n"), func_name_x, g_nbytes_func_x);
@@ -1535,7 +1551,7 @@ void set_pos_func(uint8_t channel, uint8_t id_func)
                     else
                         g_nblocks_func_x = g_nbytes_func_x / RINGBUFFER_LENGTH + 1;
 
-                    if (!g_quiet_mode)
+                    if (!g_b_quiet_mode)
                     {
                         xprintf(PSTR("g_nbytes_func_x = %u\n"), g_nbytes_func_x);
                         xprintf(PSTR("g_nbytes_final_block_x = %u\n"), g_nbytes_final_block_x);
@@ -1555,13 +1571,13 @@ void set_pos_func(uint8_t channel, uint8_t id_func)
             else
 				xputs(PSTR("Error opening file in set_pos_func(): X.\n"));
                 
-            //Reg_Handler(update_funcCnt_x, g_period_func_x, ISR_INCREMENT_FUNC_X, TRUE);//enable ISR
+            //Reg_Handler(update_position_x, g_period_func_x, ISR_INCREMENT_FUNC_X, TRUE);//enable ISR
             break;
             
         case 2:	// channel y.
-            //Reg_Handler(update_funcCnt_y, g_period_func_y, ISR_INCREMENT_FUNC_Y, FALSE); //disable ISR
+            //Reg_Handler(update_position_y, g_period_func_y, ISR_INCREMENT_FUNC_Y, FALSE); //disable ISR
             //read the header block and send back the function name
-            pFile = &file3;
+            pFile = &g_file_func_y;
             fresult = f_open(pFile, str, FA_OPEN_EXISTING | FA_READ);
             if (fresult == FR_OK)
             {
@@ -1581,7 +1597,7 @@ void set_pos_func(uint8_t channel, uint8_t id_func)
                     g_b_running = FALSE;
                     g_display_count = 0;
 
-                    if (!g_quiet_mode)
+                    if (!g_b_quiet_mode)
                         xprintf(PSTR("Setting position function %u for Y\n"), id_func);
                     //xprintf(PSTR("fun Y: %s\n function Y size: %lu bytes\n"),
                     //       func_name_y, g_nbytes_func_y);
@@ -1593,7 +1609,7 @@ void set_pos_func(uint8_t channel, uint8_t id_func)
                     else
                         g_nblocks_func_y = g_nbytes_func_y / RINGBUFFER_LENGTH + 1;
 
-                    if (!g_quiet_mode)
+                    if (!g_b_quiet_mode)
                     {
                         xprintf(PSTR("g_nbytes_func_y = %u\n"), g_nbytes_func_y);
                         xprintf(PSTR("g_nbytes_final_block_y = %u \n"), g_nbytes_final_block_y);
@@ -1612,7 +1628,7 @@ void set_pos_func(uint8_t channel, uint8_t id_func)
             else
 				xputs(PSTR("Error opening file in set_pos_func(): Y.\n"));
             
-            //Reg_Handler(update_funcCnt_y, g_period_func_y, ISR_INCREMENT_FUNC_Y, TRUE);//enable ISR
+            //Reg_Handler(update_position_y, g_period_func_y, ISR_INCREMENT_FUNC_Y, TRUE);//enable ISR
             break;
             
         default:
@@ -1631,7 +1647,7 @@ void set_vel_func(uint8_t channel, uint8_t id_func)
     //uint8_t func_name_y[100];
     //uint8_t func_name_len;
     FRESULT fresult=FR_INVALID_OBJECT;
-    FIL		*pFile=NULL;	// The file we're working on: &file2 or &file3.
+    FIL		*pFile=NULL;	// The file we're working on: &g_file_func_x or &g_file_func_y.
     uint8_t bufHeader[NBYTES_HEADER];
     
     
@@ -1643,8 +1659,8 @@ void set_vel_func(uint8_t channel, uint8_t id_func)
     switch(channel)
     {
         case 1:    //channel x
-            //Reg_Handler(update_funcCnt_x, g_period_func_x, ISR_INCREMENT_FUNC_X, FALSE); //disable ISR
-            pFile = &file2;
+            //Reg_Handler(update_position_x, g_period_func_x, ISR_INCREMENT_FUNC_X, FALSE); //disable ISR
+            pFile = &g_file_func_x;
         	fresult = f_open(pFile, str, FA_OPEN_EXISTING | FA_READ);
             
             if (fresult == FR_OK)
@@ -1666,10 +1682,10 @@ void set_vel_func(uint8_t channel, uint8_t id_func)
                     g_b_running = FALSE;
                     g_display_count = 0;  //clear the display count
 
-                    if (!g_quiet_mode)
+                    if (!g_b_quiet_mode)
                         xprintf(PSTR("Setting velocity function  %u for X\n"), id_func);
                     
-                    if (!g_quiet_mode)
+                    if (!g_b_quiet_mode)
                     {
                         xprintf(PSTR("g_nbytes_func_x = %u\n"), g_nbytes_func_x);
                         g_nbytes_final_block_x = g_nbytes_func_x % RINGBUFFER_LENGTH;
@@ -1699,13 +1715,13 @@ void set_vel_func(uint8_t channel, uint8_t id_func)
             else
 				xputs(PSTR("Error opening file in set_vel_func(): X.\n"));
 
-            //Reg_Handler(update_funcCnt_x, g_period_func_x, ISR_INCREMENT_FUNC_X, TRUE); //enable ISR
+            //Reg_Handler(update_position_x, g_period_func_x, ISR_INCREMENT_FUNC_X, TRUE); //enable ISR
             break;
             
         case 2:
             
-            //Reg_Handler(update_funcCnt_y, g_period_func_y, ISR_INCREMENT_FUNC_Y, FALSE); //disable ISR
-        	pFile = &file3;
+            //Reg_Handler(update_position_y, g_period_func_y, ISR_INCREMENT_FUNC_Y, FALSE); //disable ISR
+        	pFile = &g_file_func_y;
         	fresult = f_open(pFile, str, FA_OPEN_EXISTING | FA_READ);
             
             if (fresult == FR_OK)
@@ -1727,10 +1743,10 @@ void set_vel_func(uint8_t channel, uint8_t id_func)
                     g_b_running = FALSE;
                     g_display_count = 0;  //clear the display count
 
-                    if (!g_quiet_mode)
+                    if (!g_b_quiet_mode)
                         xprintf(PSTR("Setting velocity function %u for Y\n"), id_func);
                     
-                    if (!g_quiet_mode)
+                    if (!g_b_quiet_mode)
                     {
                         xprintf(PSTR("g_nbytes_func_y = %u\n"), g_nbytes_func_y);
                         g_nbytes_final_block_y = g_nbytes_func_y % RINGBUFFER_LENGTH;
@@ -1760,7 +1776,7 @@ void set_vel_func(uint8_t channel, uint8_t id_func)
             else
 				xputs(PSTR("Error opening file in set_vel_func(): Y.\n"));
             
-            //Reg_Handler(update_funcCnt_y, g_period_func_y, ISR_INCREMENT_FUNC_Y, TRUE); //enable ISR
+            //Reg_Handler(update_position_y, g_period_func_y, ISR_INCREMENT_FUNC_Y, TRUE); //enable ISR
             break;
             
         default:
@@ -1770,12 +1786,15 @@ void set_vel_func(uint8_t channel, uint8_t id_func)
 }
     
 
-void update_funcCnt_x(void)
+// update_position_x()
+// Calculates and sets the x position.
+//
+void update_position_x(void)
 {
-    int16_t X_dac_val;
-    int16_t temp_ADC_val;
-    int32_t temp_index_x;
     uint16_t adc_x;
+    int16_t  dac_x;
+    int16_t  x_tmp;
+    int32_t  x;
 
     
     if (g_filllevel_buf_func_x)
@@ -1787,43 +1806,33 @@ void update_funcCnt_x(void)
         switch(g_mode_x)
         {
             case 3:
-                adc_x = analogRead(2);  //adc_x ranges from 0-4095 (12bit ADC) when input 0-10V
+                adc_x = analogRead(2);  //adc_x ranges from 0-DAQRESOLUTION (12bit ADC).
+				adc_x = CLIP(adc_x, 0, g_adc_x_max);
 
-                if (adc_x>g_resolution_x)
-                	adc_x = g_resolution_x;
+                // Calculate the position.
+                x = (2 * (int32_t)adc_x * (int32_t)g_x_max + (int32_t)g_adc_x_max) / ((int32_t) g_adc_x_max * 2) - 1;
+                x = CLIP(x, 0, g_x_max-1);
+                g_x = x;
 
-                //calculate the g_x
-                temp_index_x = ((int32_t)adc_x * g_x_max * 2 + g_resolution_x) / ((int32_t) g_resolution_x * 2) - 1;
-
-                //check if too big
-                if (temp_index_x >= g_x_max)
-                    temp_index_x = g_x_max - 1;
-
-                //or too small
-                if (temp_index_x <= 0)
-                    temp_index_x = 0;
-
-                g_x = temp_index_x;
-
-                g_index_frame = g_y*g_x_max + g_x;
+                g_index_frame = FRAMEFROMXY(g_x, g_y);
                 break;
 
             case 4:
-                temp_ADC_val = X_pos_index + g_buf_func_x[g_index_func_x_read];
-                if (temp_ADC_val >= 0)
-                    g_x = temp_ADC_val%g_x_max;
+                x_tmp = g_x_initial + g_buf_func_x[g_index_func_x_read];
 
-                //g_x should already smaller than g_x_max
-                if (temp_ADC_val < 0)
-                    g_x = g_x_max - ((abs(temp_ADC_val))%g_x_max) -1;
+                // Wrap around if necessary.
+                if (x_tmp >= 0)
+                    g_x = x_tmp%g_x_max;
+                else
+                    g_x = g_x_max - ((abs(x_tmp))%g_x_max) - 1;
 
-                g_index_frame = g_y*g_x_max + g_x;
+                g_index_frame = FRAMEFROMXY(g_x, g_y);
                 break;
 
             case 5:   // in function DBG mode - show the function gen
                 //3277 is converted to 1V by DAC, we amplify function value so value 100 is about 1V
-                X_dac_val = g_buf_func_x[g_index_func_x_read]*33;
-                analogWrite(0, X_dac_val); // make it a value in the range -32767 - 32767 (-10V - 10V)
+                dac_x = g_buf_func_x[g_index_func_x_read]*33;
+                analogWrite(0, dac_x); // make it a value in the range -32767 - 32767 (-10V - 10V)
                 break;
             
         }
@@ -1832,6 +1841,65 @@ void update_funcCnt_x(void)
         xputs(PSTR("Function buffer for x is empty\n"));
 
 }
+
+
+// update_position_y()
+// Calculates and sets the x position.
+//
+void update_position_y(void)
+{
+    uint16_t adc_y;
+    int16_t  dac_y;
+    int16_t  y_tmp;
+    int32_t  y;
+
+
+    if (g_filllevel_buf_func_y)
+    {
+        g_index_func_y_read++;
+        g_index_func_y_read %= RINGBUFFER_LENGTH;
+        g_filllevel_buf_func_y--;
+
+        switch(g_mode_y)
+        {
+            case 3: // POS mode, use CH3 to set the frame position (pos ctrl, not vel ctrl)
+                adc_y = analogRead(3);   //adc_y ranges from 0-DAQRESOLUTION.
+                adc_y = CLIP(adc_y, 0, g_adc_y_max);
+
+                // Calculate the position.
+                y = ((int32_t)adc_y * g_y_max * 2 + g_adc_y_max) / ((int32_t) g_adc_y_max * 2) - 1;
+                y = CLIP(y, 0, g_y_max-1);
+                g_y = y;
+
+                g_index_frame = FRAMEFROMXY(g_x, g_y);
+                break;
+
+            case 4:
+                //only use y_tmp as a temp variable, just not to create an additional one
+                y_tmp = (g_y_initial + g_buf_func_y[g_index_func_y_read]);
+
+                // Wrap around if necessary.
+                if (y_tmp >= 0)
+                    g_y = y_tmp%g_y_max;
+                else
+                	g_y = g_y_max - ((abs(y_tmp))%g_y_max) - 1;
+
+                g_index_frame = FRAMEFROMXY(g_x, g_y);
+                break;
+
+            case 5:   // in function DBG mode - show the function gen
+                //3277 is converted to 1V by DAC, we amplify function value so value 100 is about 1V
+                dac_y = g_buf_func_y[g_index_func_y_read]*33;
+                analogWrite(1, dac_y); // make it a value in the range -32767 - 32767 (-10V - 10V)
+                break;
+
+        }
+    }
+    else
+        xputs(PSTR("Function buffer for y is empty\n"));
+
+}
+
 
 // fetch_block_func_x()
 // Read a block from the given open file into the Y function buffer.
@@ -1862,7 +1930,7 @@ void fetch_block_func_x(FIL *pFile, uint8_t bReset, uint8_t i_block_func_x)
         fresult = f_lseek(pFile, offset);
         if ((fresult == FR_OK) && (pFile->fptr == offset))
         {
-            //i_block_func_x ranges from 0 to g_nblocks_func_x - 1
+            //i_block_func_x rangesx from 0 to g_nblocks_func_x - 1
             if ((i_block_func_x ==  g_nblocks_func_x - 1) && (g_nbytes_final_block_x != 0))
                 nbytesBuf = g_nbytes_final_block_x;
             else
@@ -1896,70 +1964,6 @@ void fetch_block_func_x(FIL *pFile, uint8_t bReset, uint8_t i_block_func_x)
         xputs(PSTR("Function buffer for x is full\n"));
 
 }
-
-void update_funcCnt_y(void)
-{
-    int16_t Y_dac_val;
-    int16_t temp_ADC_val;
-    int32_t temp_index_y;
-    uint16_t adc_y;
-
-    
-    if (g_filllevel_buf_func_y)
-    {
-        g_index_func_y_read++;
-        g_index_func_y_read %= RINGBUFFER_LENGTH;
-        g_filllevel_buf_func_y--;
-
-        switch(g_mode_y)
-        {
-            case 3: // POS mode, use CH3 to set the frame position (pos ctrl, not vel ctrl)
-                adc_y = analogRead(3);   //adc_y ranges from 0-4095 when input 0-10V
-
-                if (adc_y>g_resolution_y)
-                	adc_y = g_resolution_y;
-
-                //calculate the g_x
-                temp_index_y = ((int32_t)adc_y * g_y_max * 2 + g_resolution_y) / ((int32_t) g_resolution_y * 2) - 1;
-
-                //check if too big
-                if (temp_index_y >= g_y_max)
-                    temp_index_y = g_y_max - 1;
-
-        		//or too small
-                if (temp_index_y <= 0)
-                    temp_index_y = 0;
-
-                g_y = temp_index_y;
-                g_index_frame = g_y*g_x_max + g_x;
-                break;
-
-            case 4:
-                //only use temp_ADC_val as a temp variable, just not to create an additional one
-                temp_ADC_val = (Y_pos_index + g_buf_func_y[g_index_func_y_read]);
-                if (temp_ADC_val >= 0)
-                    g_y = temp_ADC_val%g_y_max;
-
-                //g_y should always be smaller than g_y_max
-                if (temp_ADC_val < 0)
-                    g_y = g_y_max - ((abs(temp_ADC_val))%g_y_max) - 1;
-
-                g_index_frame = g_y*g_x_max + g_x;
-                break;
-        
-            case 5:   // in function DBG mode - show the function gen
-                //3277 is converted to 1V by DAC, we amplify function value so value 100 is about 1V
-                Y_dac_val = g_buf_func_y[g_index_func_y_read]*33;
-                analogWrite(1, Y_dac_val); // make it a value in the range -32767 - 32767 (-10V - 10V)
-                break;
-
-        }
-    }
-    else
-        xputs(PSTR("Function buffer for y is empty\n"));
-
-}
-
 
 // fetch_block_func_y()
 // Read a block from the given open file into the Y function buffer.
@@ -2033,23 +2037,23 @@ void dump_mat(void)
     uint8_t matBuff[50];
     
     // try to read in the SD.mat filfil
-    fresult = f_open(&file4, SDInfo, FA_OPEN_EXISTING | FA_READ);
+    fresult = f_open(&g_file_arenaconfig, SDInfo, FA_OPEN_EXISTING | FA_READ);
     if (fresult == FR_OK)
     {
         // looks good
-        iteration = file4.fsize/50;
-        fileRemain = (uint8_t)(file4.fsize - iteration*50);
-        //xprintf(PSTR("filesize = %lu, iteration = %lu, fileRemain = %u\n"), file4.fsize, iteration, fileRemain);
+        iteration = g_file_arenaconfig.fsize/50;
+        fileRemain = (uint8_t)(g_file_arenaconfig.fsize - iteration*50);
+        //xprintf(PSTR("filesize = %lu, iteration = %lu, fileRemain = %u\n"), g_file_arenaconfig.fsize, iteration, fileRemain);
         
         // send 50 bytes data for iteration times
         for (b1=1; b1<= iteration; b1++)
         {
             offset = (b1 -1)*50;
             
-            fresult = f_lseek(&file4, offset);
-            if ((fresult == FR_OK) && (file4.fptr == offset))
+            fresult = f_lseek(&g_file_arenaconfig, offset);
+            if ((fresult == FR_OK) && (g_file_arenaconfig.fptr == offset))
             {
-                fresult = f_read(&file4, matBuff, 50, &cnt);
+                fresult = f_read(&g_file_arenaconfig, matBuff, 50, &cnt);
                 if ((fresult == FR_OK) && (cnt == 50))
                 {
                     send_Tx_buffer(matBuff, 50);
@@ -2062,10 +2066,10 @@ void dump_mat(void)
         }
         //send the remained data
         offset = (b1-1)*50;
-        fresult=f_lseek(&file4, offset);
-        if ((fresult == FR_OK) && (file4.fptr == offset))
+        fresult=f_lseek(&g_file_arenaconfig, offset);
+        if ((fresult == FR_OK) && (g_file_arenaconfig.fptr == offset))
         {
-            fresult = f_read(&file4, matBuff, fileRemain, &cnt);
+            fresult = f_read(&g_file_arenaconfig, matBuff, fileRemain, &cnt);
             if ((fresult == FR_OK) && (cnt == fileRemain))
             {
                 send_Tx_buffer(matBuff, fileRemain);
@@ -2074,7 +2078,7 @@ void dump_mat(void)
         else
             xputs(PSTR("Error f_lseek in remained data.\n"));
         
-        f_close(&file4);
+        f_close(&g_file_arenaconfig);
     } 
     else 
         xputs(PSTR("Error f_open in SDInfo.mat.\n"));//end if (fresult == FR_OK

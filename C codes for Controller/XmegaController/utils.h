@@ -120,30 +120,31 @@
 #define ADC_RR2_CH5				9
 #define ADC_RR2_CH6				7
 #define ADC_RR2_CH7				5
-#define ADC_RR_CH_BIT(ch)      (((5-((ch)-(ch>3?4:0)))<<1) + 1)
-#define ADC_RR_BITS(ch,range)	((range) << ADC_RR_CH_BIT(ch))
+
+// Range register bit combinations.
+#define ADC_RR_CH_BIT(ch)      (((5-((ch)-(ch>3?4:0)))<<1) + 1) // Convert a channel number to a bit position.
+#define ADC_RR_BITS(ch,range)	((range) << ADC_RR_CH_BIT(ch))	// Get the bitfield corresponding to a channel number and voltage range.
 
 
-FIL file5, file6;
 static const uint8_t panelFlash[] = "panel.hex\0";
 static const uint8_t panelEEprom[] = "panel.eep\0";
 
-TWI_Master_t twi1;    // TWI master module #1
-TWI_Master_t twi2;    // TWI master module #2
-TWI_Master_t twi3;    // TWI master module #3
-TWI_Master_t twi4;    // TWI master module #4
+extern TWI_Master_t twi1;    // TWI master module #1
+extern TWI_Master_t twi2;    // TWI master module #2
+extern TWI_Master_t twi3;    // TWI master module #3
+extern TWI_Master_t twi4;    // TWI master module #4
 
-uint8_t  chMap[129];  // panel twi channel mapping
+extern uint8_t  g_ch_from_panel[];  // panel twi channel mapping
 
 typedef struct ihexrec {
-  uint8_t  reclen;
-  uint16_t loadofs;
-  uint8_t  rectyp;
-  uint8_t  data[IHEX_MAXDATA];
-  uint8_t  cksum;
-}ihexrec_t;
+	uint8_t  reclen;
+	uint16_t loadofs;
+	uint8_t  rectyp;
+	uint8_t  data[IHEX_MAXDATA];
+	uint8_t  cksum;
+} ihexrec_t;
 
-/* Routine Prototypes */
+/* Function prototypes */
 void CCPWrite( volatile uint8_t * address, uint8_t value );
 void ledWrite( uint8_t led, uint8_t value );
 void ledToggle( uint8_t led );
@@ -160,19 +161,16 @@ void test_ADC(uint8_t ch);
 void eeprom_panel(uint8_t panel_num);
 void flash_panel(uint8_t panel_num);
 void writeCommandToADC (uint16_t command);
+void set_voltage_range(uint8_t adc, uint8_t range);
 
-static
-int16_t ihex_readrec(ihexrec_t * ihex, char * rec);
+static int16_t ihex_readrec(ihexrec_t * ihex, char * rec);
 
-static
-void put_rc (FRESULT rc);
+static void put_rc (FRESULT rc);
 
 void progPage(TWI_Master_t *twi, uint32_t paddr, uint8_t psize, uint8_t *buff);
 void readPage(TWI_Master_t *twi, uint32_t paddr, uint8_t psize, uint8_t *buff);
-
-
 int verifyPage(TWI_Master_t *twi, uint32_t paddr, uint8_t psize, uint8_t *buff);
-
 void progEEPage(TWI_Master_t *twi, uint32_t paddr, uint8_t psize, uint8_t *buff);
 void readEEPage(TWI_Master_t *twi, uint32_t paddr, uint8_t psize, uint8_t *buff);
 int verifyEEPage(TWI_Master_t *twi, uint32_t paddr, uint8_t psize, uint8_t *buff);
+

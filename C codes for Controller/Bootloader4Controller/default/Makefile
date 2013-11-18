@@ -11,8 +11,11 @@ F_CPU            = 2000000
 OPTIMIZE         = 
 DEFS             = -DF_CPU=$(F_CPU)UL
 LIBS             =
-FLASH_SERIALPORT = /dev/ttyUSB0
+#FLASH_PROGRAMMER = avr109
+#FLASH_SERIALPORT = /dev/ttyUSB0
 FLASH_BAUDRATE   = 115200
+FLASH_PROGRAMMER = avrispmkII
+FLASH_SERIALPORT = usb
 
 
 ## Programs.

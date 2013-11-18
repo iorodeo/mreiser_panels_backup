@@ -12,8 +12,11 @@ OPTIMIZE       = -Os -mcall-prologues
 DEFS           = -DF_CPU=$(F_CPU)UL
 LIBS           =
 DEBUG          = dwarf-2
-FLASH_SERIALPORT = /dev/ttyUSB0
+#FLASH_PROGRAMMER = avr109
+#FLASH_SERIALPORT = /dev/ttyUSB0
 FLASH_BAUDRATE   = 115200
+FLASH_PROGRAMMER = avrispmkII
+FLASH_SERIALPORT = usb
 
 
 ## Programs.
@@ -80,6 +83,6 @@ clean:
 
 
 flash:
-	avrdude -p $(MCU_TARGET) -P $(FLASH_SERIALPORT) -b $(FLASH_BAUDRATE) -c avr109 -e -U flash:w:$(TARGET).hex
+	avrdude -p $(MCU_TARGET) -P $(FLASH_SERIALPORT) -b $(FLASH_BAUDRATE) -c $(FLASH_PROGRAMMER) -e -U flash:w:$(TARGET).hex
 
     

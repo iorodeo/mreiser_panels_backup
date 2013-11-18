@@ -91,7 +91,7 @@ uint8_t           g_adr_from_panel[129]; // panel twi address mapping, we can ha
 
 
 
-static const uint8_t VERSION[] = "1.2\0";
+static const uint8_t VERSION[] = "1.3\0";
 static const uint8_t SDInfo[] = "SD.mat\0";
 
 
@@ -904,6 +904,7 @@ void fetch_and_display_frame(FIL *pFile, uint16_t index_frame, uint16_t Xindex, 
     uint8_t block_per_frame;
     uint8_t tempVal, bitIndex, arrayIndex;
     
+
     digitalWrite(DIO_FRAMEBUSY, HIGH); // set line high at start of frame write
     len = g_num_panels * g_bytes_per_panel_frame;
     
@@ -1007,18 +1008,17 @@ void fetch_and_display_frame(FIL *pFile, uint16_t index_frame, uint16_t Xindex, 
         {
             if (!g_b_quiet_mode)
             {
-                xputs(PSTR("Error in f_read in fetch_and_display_frame!\n"));
-                xprintf(PSTR("RES = %u, index_frame= %u, cnt= %u\n"), fresult, index_frame, cnt);
+                xputs(PSTR("Error in reading file in fetch_and_display_frame!\n"));
+                xprintf(PSTR("fresult = %u, index_frame= %u, cnt= %u\n"), fresult, index_frame, cnt);
             }
         }
     }
     else
     {
-        
         if (!g_b_quiet_mode)
         {
-            xputs(PSTR("Error in f_lseek in fetch_and_display_frame!\n"));
-            xprintf(PSTR("RES = %u, index_frame= %u, offset = %lu\n"), fresult, index_frame, offset);
+            xputs(PSTR("Error seeking in fetch_and_display_frame!\n"));
+            xprintf(PSTR("fresult = %u, index_frame= %u, offset = %lu, pFile->fs=%X, pFile->fs->fs_type=%X, pFile->fs->id=%X\n"), fresult, index_frame, offset, pFile->fs, pFile->fs->fs_type, pFile->fs->id);
         }
     }
     
@@ -1271,8 +1271,8 @@ void set_pattern(uint8_t pat_num)
         xputs(PSTR("pat_num is too big.\n"));
    
     
-    
-    res = f_open(&g_file_pattern, str, FA_OPEN_EXISTING | FA_READ);
+    f_close(&g_file_pattern);
+    res = f_open(&g_file_pattern, str, FA_OPEN_EXISTING | FA_READ); // The file stays open after this function returns.
     if (res == FR_OK)
     {
         res = f_read(&g_file_pattern, bufHeader, NBYTES_HEADER, &cnt); // read the 10 byte header info block
@@ -1313,8 +1313,6 @@ void set_pattern(uint8_t pat_num)
         }
         else
         	xputs(PSTR("Error reading in pattern file\n"));
-        
-        f_close(&g_file_pattern);
     }
     else
     	xputs(PSTR("Error opening pattern file\n"));
@@ -1512,7 +1510,8 @@ void set_pos_func(uint8_t channel, uint8_t id_func)
             //Reg_Handler(update_position_x, g_period_func_x, ISR_INCREMENT_FUNC_X, FALSE);//disable ISR
             
             pFile = &g_file_func_x;
-            fresult = f_open(pFile, str, FA_OPEN_EXISTING | FA_READ);
+            f_close(pFile);
+            fresult = f_open(pFile, str, FA_OPEN_EXISTING | FA_READ); // The file stays open after this function returns.
             if (fresult == FR_OK)
             {
             	// Read the header into the buffer.
@@ -1565,8 +1564,6 @@ void set_pos_func(uint8_t channel, uint8_t id_func)
                 }
                 else
 					xputs(PSTR("Error reading file in set_pos_func(): X\n"));
-
-                f_close(pFile);
             }
             else
 				xputs(PSTR("Error opening file in set_pos_func(): X.\n"));
@@ -1578,7 +1575,8 @@ void set_pos_func(uint8_t channel, uint8_t id_func)
             //Reg_Handler(update_position_y, g_period_func_y, ISR_INCREMENT_FUNC_Y, FALSE); //disable ISR
             //read the header block and send back the function name
             pFile = &g_file_func_y;
-            fresult = f_open(pFile, str, FA_OPEN_EXISTING | FA_READ);
+            f_close(pFile);
+            fresult = f_open(pFile, str, FA_OPEN_EXISTING | FA_READ); // The file stays open after this function returns.
             if (fresult == FR_OK)
             {
                 fresult = f_read(pFile, bufHeader, NBYTES_HEADER, &cnt);
@@ -1622,8 +1620,6 @@ void set_pos_func(uint8_t channel, uint8_t id_func)
                 }
                 else
 					xputs(PSTR("Error reading file in set_pos_func(): Y.\n"));
-
-                f_close(pFile);
             }
             else
 				xputs(PSTR("Error opening file in set_pos_func(): Y.\n"));
@@ -1658,10 +1654,11 @@ void set_vel_func(uint8_t channel, uint8_t id_func)
     
     switch(channel)
     {
-        case 1:    //channel x
+        case 1:    // Channel x.
             //Reg_Handler(update_position_x, g_period_func_x, ISR_INCREMENT_FUNC_X, FALSE); //disable ISR
             pFile = &g_file_func_x;
-        	fresult = f_open(pFile, str, FA_OPEN_EXISTING | FA_READ);
+            f_close(pFile);
+        	fresult = f_open(pFile, str, FA_OPEN_EXISTING | FA_READ); // The file stays open after this function returns.
             
             if (fresult == FR_OK)
             {
@@ -1709,8 +1706,6 @@ void set_vel_func(uint8_t channel, uint8_t id_func)
                 }
                 else
                 	xputs(PSTR("Error reading file in set_vel_func(): X.\n"));
-
-            	f_close(pFile);
             }
             else
 				xputs(PSTR("Error opening file in set_vel_func(): X.\n"));
@@ -1718,11 +1713,12 @@ void set_vel_func(uint8_t channel, uint8_t id_func)
             //Reg_Handler(update_position_x, g_period_func_x, ISR_INCREMENT_FUNC_X, TRUE); //enable ISR
             break;
             
-        case 2:
             
+        case 2:	// Channel y.
             //Reg_Handler(update_position_y, g_period_func_y, ISR_INCREMENT_FUNC_Y, FALSE); //disable ISR
         	pFile = &g_file_func_y;
-        	fresult = f_open(pFile, str, FA_OPEN_EXISTING | FA_READ);
+            f_close(pFile);
+        	fresult = f_open(pFile, str, FA_OPEN_EXISTING | FA_READ); // The file stays open after this function returns.
             
             if (fresult == FR_OK)
             {
@@ -1770,8 +1766,6 @@ void set_vel_func(uint8_t channel, uint8_t id_func)
                 }
                 else
 					xputs(PSTR("Error reading file in set_vel_func(): Y.\n"));
-
-            	f_close(pFile);
             }
             else
 				xputs(PSTR("Error opening file in set_vel_func(): Y.\n"));

@@ -1,6 +1,11 @@
 #include "utils.h"
 
 
+FIL             g_file_flash, g_file_eeprom;
+TWI_Master_t    twi1;    // TWI master module #1
+TWI_Master_t    twi2;    // TWI master module #2
+TWI_Master_t    twi3;    // TWI master module #3
+TWI_Master_t    twi4;    // TWI master module #4
 
 
 void init_all()
@@ -138,6 +143,30 @@ void init_all()
   sei();
 }
 
+/*
+void set_voltage_range(uint8_t adc, uint8_t range)
+{
+	// Prepare for SPI communication to the ADC7328.
+	SPIC.CTRL = 0x58;       // 0101 1000:  Enable Master Mode, Mode 2, clkper/4
+
+	// range register 1: -5V-+5v on channels 0,1
+	//                    0-10V on channels 2, 3
+	// Note: if you change the ranges, also change in analogRead().
+	writeCommandToADC(ADC_WRITE | ADC_RANGEREGISTER1
+						| ADC_RR_BITS(0, ADC_RR_VIN_PLUSMINUS5)
+						| ADC_RR_BITS(1, ADC_RR_VIN_PLUSMINUS5)
+						| ADC_RR_BITS(2, ADC_RR_VIN_PLUS10)
+						| ADC_RR_BITS(3, ADC_RR_VIN_PLUS10));
+
+	// range register 2: 0-10v range on channels 4,5,6,7
+	// Note: if you change the ranges, also change in analogRead().
+	writeCommandToADC(ADC_WRITE | ADC_RANGEREGISTER2
+						| ADC_RR_BITS(4, ADC_RR_VIN_PLUS10)
+						| ADC_RR_BITS(5, ADC_RR_VIN_PLUS10)
+						| ADC_RR_BITS(6, ADC_RR_VIN_PLUS10)
+						| ADC_RR_BITS(7, ADC_RR_VIN_PLUS10));
+}
+*/
 
 void writeCommandToADC (uint16_t command)
 {
@@ -149,6 +178,23 @@ void writeCommandToADC (uint16_t command)
 	  PORTC.OUTSET = PIN4_bm;				// Execute the command, i.e. deselect the AD7328 DAC chip.
 
 }
+/*
+int16_t readRegisterFromADC (uint16_t command)
+{
+	int16_t	w1;
+
+	PORTC.OUTCLR = PIN4_bm;				// Select the AD7328 DAC chip.
+	SPIC.DATA = 0;
+	loop_until_bit_is_set(SPIC.STATUS, 7);
+	((uint8_t*)&w1)[1] = SPIC.DATA;
+	SPIC.DATA = 0;
+	loop_until_bit_is_set(SPIC.STATUS, 7);
+	((uint8_t*)&w1)[0] = SPIC.DATA;
+	PORTC.OUTSET = PIN4_bm;				// Deselect the AD7328 DAC chip.
+
+	return w1;
+}
+*/
 
 int16_t readConversionFromADC (void)
 {
@@ -561,7 +607,7 @@ void flash_panel(uint8_t panel_num)
     uint8_t ch;
     uint8_t flashBuff[256];
     
-    ch = chMap[panel_num];
+    ch = g_ch_from_panel[panel_num];
     if (ch != 0)
     {
         switch (ch)
@@ -590,7 +636,7 @@ void flash_panel(uint8_t panel_num)
         }
         
         // open the hex file for reading
-        res = f_open(&file5, panelFlash, FA_OPEN_EXISTING | FA_READ);
+        res = f_open(&g_file_flash, panelFlash, FA_OPEN_EXISTING | FA_READ);
         if (res != FR_OK)
         {
             // could'n open the file
@@ -635,7 +681,7 @@ void flash_panel(uint8_t panel_num)
         pagestartaddr = 0;
         pageendaddr = 0;
         xputs(PSTR("\nwriting:   "));
-        while (f_gets((char*)flashBuff, sizeof(flashBuff), &file5) != NULL)
+        while (f_gets((char*)flashBuff, sizeof(flashBuff), &g_file_flash) != NULL)
         {
             lineno++;
             len = strlen(flashBuff);
@@ -705,7 +751,7 @@ void flash_panel(uint8_t panel_num)
             }
         }
         // rewind the the input file to the start for verification
-        res = f_lseek(&file5, 0);
+        res = f_lseek(&g_file_flash, 0);
         if (res != FR_OK)
         {
             xputs(PSTR("Error f_lseek in panel.hex.\n"));
@@ -719,7 +765,7 @@ void flash_panel(uint8_t panel_num)
             pagestartaddr = 0;
             pageendaddr = 0;
             xputs(PSTR("\nverifying: "));
-            while (f_gets((char*)flashBuff, sizeof(flashBuff), &file5) != NULL)
+            while (f_gets((char*)flashBuff, sizeof(flashBuff), &g_file_flash) != NULL)
             {
                 lineno++;
                 len = strlen(flashBuff);
@@ -831,7 +877,7 @@ void eeprom_panel(uint8_t panel_num)
     uint8_t ch;
     uint8_t eepromBuff[256];
     
-    ch = chMap[panel_num];
+    ch = g_ch_from_panel[panel_num];
     if (ch != 0)
     {
         
@@ -855,7 +901,7 @@ void eeprom_panel(uint8_t panel_num)
         }
         
         // open the hex file for reading
-        res = f_open(&file6, panelEEprom, FA_OPEN_EXISTING | FA_READ);
+        res = f_open(&g_file_eeprom, panelEEprom, FA_OPEN_EXISTING | FA_READ);
         if (res != FR_OK)
         {
             // could'n open the file
@@ -900,7 +946,7 @@ void eeprom_panel(uint8_t panel_num)
         pagestartaddr = 0;
         pageendaddr = 0;
         xputs(PSTR("\nwriting:   "));
-        while (f_gets((char*)eepromBuff, sizeof(eepromBuff), &file6) != NULL)
+        while (f_gets((char*)eepromBuff, sizeof(eepromBuff), &g_file_eeprom) != NULL)
         {
             lineno++;
             len = strlen(eepromBuff);
@@ -973,7 +1019,7 @@ void eeprom_panel(uint8_t panel_num)
             }
         }
         // rewind the the input file to the start for verification
-        res = f_lseek(&file6, 0);
+        res = f_lseek(&g_file_eeprom, 0);
         if (res != FR_OK)
         {
             xputs(PSTR("Error f_lseek in eeprom.hex.\n"));
@@ -987,7 +1033,7 @@ void eeprom_panel(uint8_t panel_num)
             pagestartaddr = 0;
             pageendaddr = 0;
             xputs(PSTR("\nverifying: "));
-            while (f_gets((char*)eepromBuff, sizeof(eepromBuff), &file6) != NULL)
+            while (f_gets((char*)eepromBuff, sizeof(eepromBuff), &g_file_eeprom) != NULL)
             {
                 lineno++;
                 len = strlen(eepromBuff);

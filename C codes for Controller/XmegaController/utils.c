@@ -7,6 +7,8 @@ TWI_Master_t    twi2;    // TWI master module #2
 TWI_Master_t    twi3;    // TWI master module #3
 TWI_Master_t    twi4;    // TWI master module #4
 
+static uint16_t	s_command_rangeregister[2]={0,0};
+
 
 void init_all()
 { 
@@ -71,26 +73,27 @@ void init_all()
   TCE1.PER   = 39999;     // 100Hz
   TCE1.INTCTRLA = 0x02;   // Timer overflow is a medium level interrupt
 
+  // Set initial default values for analog input voltage ranges.
+  // Note: if you change the ranges, also change in analogRead().
+  s_command_rangeregister[0] = ADC_WRITE | ADC_RANGEREGISTER1
+									| ADC_RR_BITS(0, ADC_RR_VIN_PLUSMINUS5)
+									| ADC_RR_BITS(1, ADC_RR_VIN_PLUSMINUS5)
+									| ADC_RR_BITS(2, ADC_RR_VIN_PLUS10)
+									| ADC_RR_BITS(3, ADC_RR_VIN_PLUS10);
+
+  s_command_rangeregister[1] = ADC_WRITE | ADC_RANGEREGISTER2
+									| ADC_RR_BITS(4, ADC_RR_VIN_PLUSMINUS5)
+									| ADC_RR_BITS(5, ADC_RR_VIN_PLUSMINUS5)
+									| ADC_RR_BITS(6, ADC_RR_VIN_PLUS10)
+									| ADC_RR_BITS(7, ADC_RR_VIN_PLUS10);
 
   // Prepare for SPI communication to the ADC7328.
   SPIC.CTRL = 0x58;       // 0101 1000:  Enable Master Mode, Mode 2, clkper/4
 
-  // range register 1: -5V-+5v on channels 0,1
-  //                    0-10V on channels 2, 3
-  // Note: if you change the ranges, also change in analogRead().
-  writeCommandToADC(ADC_WRITE | ADC_RANGEREGISTER1
-					| ADC_RR_BITS(0, ADC_RR_VIN_PLUSMINUS5)
-	  	  	  		| ADC_RR_BITS(1, ADC_RR_VIN_PLUSMINUS5)
-	  	  	  		| ADC_RR_BITS(2, ADC_RR_VIN_PLUS10)
-	  	  	  		| ADC_RR_BITS(3, ADC_RR_VIN_PLUS10));
+  // Write the range registers.
+  writeCommandToADC(s_command_rangeregister[0]);
+  writeCommandToADC(s_command_rangeregister[1]);
 
-  // range register 2: 0-10v range on channels 4,5,6,7
-  // Note: if you change the ranges, also change in analogRead().
-  writeCommandToADC(ADC_WRITE | ADC_RANGEREGISTER2
-					| ADC_RR_BITS(4, ADC_RR_VIN_PLUS10)
-	  	  	  		| ADC_RR_BITS(5, ADC_RR_VIN_PLUS10)
-	  	  	  		| ADC_RR_BITS(6, ADC_RR_VIN_PLUS10)
-	  	  	  		| ADC_RR_BITS(7, ADC_RR_VIN_PLUS10));
 
   // sequence register: all channels off.
   writeCommandToADC(ADC_WRITE | ADC_SEQUENCEREGISTER | ADC_SR_NONE);
@@ -143,30 +146,27 @@ void init_all()
   sei();
 }
 
-/*
-void set_voltage_range(uint8_t adc, uint8_t range)
+
+// set_voltage_range_channel()
+// Sets one channel of the ADC chip to the given voltage range.
+// ch: a channel number in the range 0-7
+// range:  One of
+//         ADC_RR_VIN_PLUSMINUS10
+//         ADC_RR_VIN_PLUSMINUS5
+//         ADC_RR_VIN_PLUSMINUS2P5
+//         ADC_RR_VIN_PLUS10
+//
+void set_voltage_range_channel(uint8_t ch, uint8_t range)
 {
-	// Prepare for SPI communication to the ADC7328.
-	SPIC.CTRL = 0x58;       // 0101 1000:  Enable Master Mode, Mode 2, clkper/4
+	// Update the bits in the static variable.
+	s_command_rangeregister[ADC_RR_FROM_CH(ch)] &= ~ADC_RR_CH_MASK(ch);		// Clear the bits for this channel.
+	s_command_rangeregister[ADC_RR_FROM_CH(ch)] |= ADC_RR_BITS(ch, range);  // Set the new range for this channel.
 
-	// range register 1: -5V-+5v on channels 0,1
-	//                    0-10V on channels 2, 3
-	// Note: if you change the ranges, also change in analogRead().
-	writeCommandToADC(ADC_WRITE | ADC_RANGEREGISTER1
-						| ADC_RR_BITS(0, ADC_RR_VIN_PLUSMINUS5)
-						| ADC_RR_BITS(1, ADC_RR_VIN_PLUSMINUS5)
-						| ADC_RR_BITS(2, ADC_RR_VIN_PLUS10)
-						| ADC_RR_BITS(3, ADC_RR_VIN_PLUS10));
-
-	// range register 2: 0-10v range on channels 4,5,6,7
-	// Note: if you change the ranges, also change in analogRead().
-	writeCommandToADC(ADC_WRITE | ADC_RANGEREGISTER2
-						| ADC_RR_BITS(4, ADC_RR_VIN_PLUS10)
-						| ADC_RR_BITS(5, ADC_RR_VIN_PLUS10)
-						| ADC_RR_BITS(6, ADC_RR_VIN_PLUS10)
-						| ADC_RR_BITS(7, ADC_RR_VIN_PLUS10));
+	// Send the bits out to the ADC chip.
+	SPIC.CTRL = 0x58;
+	writeCommandToADC(s_command_rangeregister[ADC_RR_FROM_CH(ch)]);
 }
-*/
+
 
 void writeCommandToADC (uint16_t command)
 {
@@ -178,23 +178,7 @@ void writeCommandToADC (uint16_t command)
 	  PORTC.OUTSET = PIN4_bm;				// Execute the command, i.e. deselect the AD7328 DAC chip.
 
 }
-/*
-int16_t readRegisterFromADC (uint16_t command)
-{
-	int16_t	w1;
 
-	PORTC.OUTCLR = PIN4_bm;				// Select the AD7328 DAC chip.
-	SPIC.DATA = 0;
-	loop_until_bit_is_set(SPIC.STATUS, 7);
-	((uint8_t*)&w1)[1] = SPIC.DATA;
-	SPIC.DATA = 0;
-	loop_until_bit_is_set(SPIC.STATUS, 7);
-	((uint8_t*)&w1)[0] = SPIC.DATA;
-	PORTC.OUTSET = PIN4_bm;				// Deselect the AD7328 DAC chip.
-
-	return w1;
-}
-*/
 
 int16_t readConversionFromADC (void)
 {
@@ -264,7 +248,6 @@ void ledBlink(void)
   {
     ledToggle(1);
     _delay_ms(350);
-//Wait(350);		
   }
 }
 

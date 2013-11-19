@@ -92,7 +92,7 @@ uint8_t           g_adr_from_panel[129]; // panel twi address mapping, we can ha
 
 
 
-static const uint8_t VERSION[] = "1.3\0";
+static const uint8_t VERSION[] = "1.33\0";
 static const uint8_t SDInfo[] = "SD.mat\0";
 
 
@@ -443,7 +443,7 @@ int main(void)
     TWI_MasterReleaseBuff(&twi3);
     TWI_MasterReleaseBuff(&twi4);
     releaseRxBuff();
-}
+} // main()
 
 
 // Starts the pattern running.
@@ -476,7 +476,7 @@ void start_running(void)
         update_position_y();
         Reg_Handler(update_position_y, g_period_func_y, ISR_INCREMENT_FUNC_Y, TRUE);
     }
-}
+} // start_running()
 
 
 void handle_message_length_1(uint8_t *msg_buffer)
@@ -637,7 +637,8 @@ void handle_message_length_1(uint8_t *msg_buffer)
     
         default: i2cMasterSend(0x00, 8, ERROR_CODES[1]);
     }
-}
+} // handle_message_length_1()
+
 
 void handle_message_length_2(uint8_t *msg_buffer)
 {
@@ -689,7 +690,8 @@ void handle_message_length_2(uint8_t *msg_buffer)
             
         default: i2cMasterSend(0x00, 8, ERROR_CODES[2]);
     }
-}
+} // handle_message_length_2()
+
 
 void handle_message_length_3(uint8_t *msg_buffer)
 {
@@ -775,9 +777,14 @@ void handle_message_length_3(uint8_t *msg_buffer)
             g_adc_y_max = (uint32_t)msg_buffer[2] * DAQRESOLUTION/10;
             break;
             
+        case 0x62: // set_voltage_range_channel
+        	set_voltage_range_channel(msg_buffer[1], msg_buffer[2]);
+        	break;
+
         default: i2cMasterSend(0x00, 8, ERROR_CODES[3]);
     }
-}
+} // handle_message_length_3()
+
 
 void handle_message_length_4(uint8_t *msg_buffer)
 {
@@ -797,7 +804,8 @@ void handle_message_length_4(uint8_t *msg_buffer)
         default:   
             i2cMasterSend(0x00, 8, ERROR_CODES[4]);
     }
-}
+} // handle_message_length_4()
+
 
 void handle_message_length_5(uint8_t *msg_buffer)
 {
@@ -836,7 +844,7 @@ void handle_message_length_5(uint8_t *msg_buffer)
             i2cMasterSend(0x00, 8, ERROR_CODES[5]);
             
     }
-}
+} // handle_message_length_5()
 
 //set gain and bias
 void handle_message_length_9(uint8_t *msg_buffer) {
@@ -874,7 +882,8 @@ void handle_message_length_62(uint8_t *msg_buffer)
         g_laserpattern[i] = msg_buffer[i];
     }
 
-}
+} // handle_message_length_62()
+
 
 //load laser trigger pattern second 63 byte data. Laser pattern has 128 bytes, but since
 //the value is either 0 or 1, we can combined them in 12 bytes to 
@@ -893,7 +902,8 @@ void handle_message_length_63(uint8_t *msg_buffer)
     if (!g_b_quiet_mode)
         xputs(PSTR("Success set the new laser pattern.\n"));
 
-}
+} // handle_message_length_63()
+
 
 void display_dumped_frame (uint8_t *msg_buffer)
 {
@@ -928,7 +938,7 @@ void display_dumped_frame (uint8_t *msg_buffer)
     analogWrite(0, x_dac_val); // make it a value in the range 0 - 32767 (0V - 10V)
     analogWrite(1, y_dac_val);  // make it a value in the range 0 - 32767 (0V - 10V)
     digitalWrite(DIO_FRAMEBUSY, LOW); // set line low at end of frame write
-}
+} // display_dumped_frame()
 
 
 void display_preload_frame(uint16_t f_num, uint16_t Xindex, uint16_t Yindex){
@@ -1123,7 +1133,7 @@ void fetch_and_display_frame(FIL *pFile, uint16_t index_frame, uint16_t Xindex, 
     
     digitalWrite(DIO_FRAMEBUSY, LOW); // set line low at end of frame write
 
-}
+} // fetch_and_display_frame()
 
 
 // set_rates()
@@ -1146,7 +1156,7 @@ void set_rates(int16_t xRate, int16_t yRate)
     else // yRate == 0
         Update_Reg_Handler(decrement_index_y, UPDATE_PERIOD, ISR_INCREMENT_INDEX_Y, FALSE);
 
-}
+} // set_rates()
 
 
 // update_display()
@@ -1283,7 +1293,7 @@ void update_display(void)
     
     g_b_xrate_greater_yrate = (xRate >= yRate);
     set_rates(xRate, yRate);
-}
+} // update_display()
 
 
 void increment_index_x(void)
@@ -1521,6 +1531,8 @@ void set_pattern(uint8_t pat_num)
    
     
     f_close(&g_file_pattern);
+    if (!g_b_quiet_mode)
+    	xprintf(PSTR("Opening %s.\n"),str);
     res = f_open(&g_file_pattern, str, FA_OPEN_EXISTING | FA_READ); // The file stays open after this function returns.
     if (res == FR_OK)
     {
@@ -1567,7 +1579,8 @@ void set_pattern(uint8_t pat_num)
     	xputs(PSTR("Error opening pattern file\n"));
 
 	usePreloadedPattern = 0;
-}
+} // set_pattern()
+
 
 void set_hwConfig(uint8_t config_num)
 {
@@ -1583,6 +1596,8 @@ void set_hwConfig(uint8_t config_num)
     else
         xputs(PSTR("config_num is too big.\n"));
             
+    if (!g_b_quiet_mode)
+    	xprintf(PSTR("Opening %s.\n"),str);
     res = f_open(&g_file_arenaconfig, str, FA_OPEN_EXISTING | FA_READ);
     if (res == FR_OK)
     {
@@ -1605,7 +1620,8 @@ void set_hwConfig(uint8_t config_num)
     {
         xputs(PSTR("Cannot find the hardware config file on the SD card.\n"));
     }
-}
+} // set_hwConfig()
+
 
 // this function assumes that a pattern has been set
 void benchmark_pattern(void)
@@ -1626,11 +1642,11 @@ void benchmark_pattern(void)
     bench_time = timer_coarse_toc();
     frame_rate = ((uint32_t)num_frames*1000)/bench_time;
     xprintf(PSTR(" bench_time = %lu ms, frame_rate = %u\n"), bench_time, frame_rate);
-	
 	//reset index_x and index_y
 	index_x=0;
 	index_y=0;
-}
+} // benchmark_pattern()
+
 
 void i2cMasterSend(uint8_t panel, uint8_t len, uint8_t *data)
 {
@@ -1685,7 +1701,7 @@ void i2cMasterSend(uint8_t panel, uint8_t len, uint8_t *data)
             TWI_MasterWrite(twi, addr, data, len);
         }
     }
-}
+} // i2cMasterSend()
 
 
 // set_default_func()
@@ -1736,7 +1752,7 @@ void set_default_func(uint8_t channel)
             break;
     }
     
-}
+} // set_default_func()
 
 
 void set_pos_func(uint8_t channel, uint8_t id_func)
@@ -1765,6 +1781,8 @@ void set_pos_func(uint8_t channel, uint8_t id_func)
             
             pFile = &g_file_func_x;
             f_close(pFile);
+            if (!g_b_quiet_mode)
+            	xprintf(PSTR("Opening %s.\n"),str);
             fresult = f_open(pFile, str, FA_OPEN_EXISTING | FA_READ); // The file stays open after this function returns.
             if (fresult == FR_OK)
             {
@@ -1830,6 +1848,8 @@ void set_pos_func(uint8_t channel, uint8_t id_func)
             //read the header block and send back the function name
             pFile = &g_file_func_y;
             f_close(pFile);
+            if (!g_b_quiet_mode)
+            	xprintf(PSTR("Opening %s.\n"),str);
             fresult = f_open(pFile, str, FA_OPEN_EXISTING | FA_READ); // The file stays open after this function returns.
             if (fresult == FR_OK)
             {
@@ -1885,7 +1905,7 @@ void set_pos_func(uint8_t channel, uint8_t id_func)
                 xputs(PSTR("Error: channel must be 1 for x, or 2 for y.\n"));
             break;
     }
-}
+} // set_pos_func()
 
 
 void set_vel_func(uint8_t channel, uint8_t id_func)
@@ -1912,6 +1932,8 @@ void set_vel_func(uint8_t channel, uint8_t id_func)
             //Reg_Handler(update_position_x, g_period_func_x, ISR_INCREMENT_FUNC_X, FALSE); //disable ISR
             pFile = &g_file_func_x;
             f_close(pFile);
+            if (!g_b_quiet_mode)
+            	xprintf(PSTR("Opening %s.\n"),str);
         	fresult = f_open(pFile, str, FA_OPEN_EXISTING | FA_READ); // The file stays open after this function returns.
             
             if (fresult == FR_OK)
@@ -1972,6 +1994,8 @@ void set_vel_func(uint8_t channel, uint8_t id_func)
             //Reg_Handler(update_position_y, g_period_func_y, ISR_INCREMENT_FUNC_Y, FALSE); //disable ISR
         	pFile = &g_file_func_y;
             f_close(pFile);
+            if (!g_b_quiet_mode)
+            	xprintf(PSTR("Opening %s.\n"),str);
         	fresult = f_open(pFile, str, FA_OPEN_EXISTING | FA_READ); // The file stays open after this function returns.
             
             if (fresult == FR_OK)
@@ -2031,7 +2055,7 @@ void set_vel_func(uint8_t channel, uint8_t id_func)
 			xputs(PSTR("Error input for function channel.\n"));
             break;
     }
-}
+} // set_vel_func()
     
 
 // update_position_x()
@@ -2079,7 +2103,7 @@ void update_position_x(void)
     else
         xputs(PSTR("Function buffer for x is empty\n"));
 
-}
+} // update_position_x()
 
 
 // update_position_y()
@@ -2128,11 +2152,11 @@ void update_position_y(void)
     else
         xputs(PSTR("Function buffer for y is empty\n"));
 
-}
+} // update_position_y()
 
 
 // fetch_block_func_x()
-// Read a block from the given open file into the Y function buffer.
+// Read a block from the given open file into the X function buffer.
 //
 void fetch_block_func_x(FIL *pFile, uint8_t bReset, uint8_t i_block_func_x)
 {
@@ -2193,7 +2217,8 @@ void fetch_block_func_x(FIL *pFile, uint8_t bReset, uint8_t i_block_func_x)
     else
         xputs(PSTR("Function buffer for x is full\n"));
 
-}
+} // fetch_block_func_x()
+
 
 // fetch_block_func_y()
 // Read a block from the given open file into the Y function buffer.
@@ -2255,7 +2280,8 @@ void fetch_block_func_y(FIL *pFile, uint8_t bReset, uint8_t i_block_func_y)
     else
         xputs(PSTR("Function buffer for y is full.\n"));
 
-} 
+} // fetch_block_func_y()
+
 
 //synchronize the SD.mat from SD card to PC
 void dump_mat(void)
@@ -2267,6 +2293,8 @@ void dump_mat(void)
     uint8_t matBuff[50];
     
     // try to read in the SD.mat filfil
+    if (!g_b_quiet_mode)
+    	xprintf(PSTR("Opening %s.\n"),SDInfo);
     fresult = f_open(&g_file_arenaconfig, SDInfo, FA_OPEN_EXISTING | FA_READ);
     if (fresult == FR_OK)
     {
@@ -2313,5 +2341,5 @@ void dump_mat(void)
     else 
         xputs(PSTR("Error f_open in SDInfo.mat.\n"));//end if (fresult == FR_OK
     
-}
+} // dump_mat()
 

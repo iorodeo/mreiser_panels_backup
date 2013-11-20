@@ -98,7 +98,7 @@ uint8_t           g_adr_from_panel[129]; // panel twi address mapping, we can ha
 
 
 
-static const uint8_t VERSION[] = "1.3\0";
+static const uint8_t VERSION[] = "1.4\0";
 static const uint8_t SDInfo[] = "SD.mat\0";
 
 
@@ -474,19 +474,19 @@ void handle_message_length_1(uint8_t *msg_buffer)
     uint32_t tmp_x=0;
     uint32_t tmp_y=0;
     uint8_t n_sample=100;
-    
+
     switch(msg_buffer[0])
     {
-        case 0x20:  //Start display.
+        case MSG_1_START:  //Start display.
         	start_running();
             break;
             
-        case 0x25:  //Start display & trigger - same as regular, but this also does trigger
+        case MSG_1_START_W_TRIG:  //Start display & trigger - same as regular, but this also does trigger
         	start_running();
         	Reg_Handler(toggle_trigger, (uint32_t)OVERFLOW_PERIOD/g_trigger_rate, ISR_TOGGLE_TRIGGER, TRUE); //turn on the trigger toggle
             break;
 
-        case 0x30: //stop display
+        case MSG_1_STOP: //stop display
             g_b_running = FALSE;
             //turn off the interupts
             Reg_Handler(update_display_for_rates,      UPDATE_PERIOD,   ISR_UPDATE_DISPLAY, FALSE);
@@ -500,7 +500,7 @@ void handle_message_length_1(uint8_t *msg_buffer)
                 fetch_block_func_y(&g_file_func_y, TRUE, 0);
             break;
             
-        case 0x35: //stop display & trigger - same as regular, but this also does trigger
+        case MSG_1_STOP_W_TRIG: //stop display & trigger - same as regular, but this also does trigger
             g_b_running = FALSE;
             //turn off the interupts
             Reg_Handler(update_display_for_rates,      UPDATE_PERIOD,                  ISR_UPDATE_DISPLAY, FALSE);
@@ -511,64 +511,65 @@ void handle_message_length_1(uint8_t *msg_buffer)
             Reg_Handler(toggle_trigger,                OVERFLOW_PERIOD/g_trigger_rate, ISR_TOGGLE_TRIGGER, FALSE); //turn off the trigger toggle
             digitalWrite(DIO_TRIGGEROUT,LOW);    //set the trigger output to low
             break;
+
             
-        case 0x00:  i2cMasterSend(0x00, 8, ALL_OFF); break;
-        case 0x40:  i2cMasterSend(0x00, 24, G_LEVELS[0]); break;
-        case 0x41:  i2cMasterSend(0x00, 24, G_LEVELS[1]); break;
-        case 0x42:  i2cMasterSend(0x00, 24, G_LEVELS[2]); break;
-        case 0x43:  i2cMasterSend(0x00, 24, G_LEVELS[3]);   break;
-        case 0x44:  i2cMasterSend(0x00, 24, G_LEVELS[4]); break;
-        case 0x45:  i2cMasterSend(0x00, 24, G_LEVELS[5]); break;
-        case 0x46:  i2cMasterSend(0x00, 24, G_LEVELS[6]); break;
-        case 0x47:  i2cMasterSend(0x00, 24, G_LEVELS[7]); break;
-        case 0xFF:  i2cMasterSend(0x00, 8, ALL_ON); break;
-        case 0x50:  ledBlink(); break;
-        case 0x60:  SystemReset();  break;
-        case 0x70:  benchmark_pattern(); break;
-        case 0x90:  i2cMasterSend(0x00, 32, G_LEVELS_16[0]); break;
-        case 0x91:  i2cMasterSend(0x00, 32, G_LEVELS_16[1]); break;
-        case 0x92:  i2cMasterSend(0x00, 32, G_LEVELS_16[2]); break;
-        case 0x93:  i2cMasterSend(0x00, 32, G_LEVELS_16[3]); break;
-        case 0x94:  i2cMasterSend(0x00, 32, G_LEVELS_16[4]); break;
-        case 0x95:  i2cMasterSend(0x00, 32, G_LEVELS_16[5]); break;
-        case 0x96:  i2cMasterSend(0x00, 32, G_LEVELS_16[6]); break;
-        case 0x97:  i2cMasterSend(0x00, 32, G_LEVELS_16[7]); break;
-        case 0x98:  i2cMasterSend(0x00, 32, G_LEVELS_16[8]); break;
-        case 0x99:  i2cMasterSend(0x00, 32, G_LEVELS_16[9]); break;
-        case 0x9A:  i2cMasterSend(0x00, 32, G_LEVELS_16[10]); break;
-        case 0x9B:  i2cMasterSend(0x00, 32, G_LEVELS_16[11]); break;
-        case 0x9C:  i2cMasterSend(0x00, 32, G_LEVELS_16[12]); break;
-        case 0x9D:  i2cMasterSend(0x00, 32, G_LEVELS_16[13]); break;
-        case 0x9E:  i2cMasterSend(0x00, 32, G_LEVELS_16[14]); break;
-        case 0x9F:  i2cMasterSend(0x00, 32, G_LEVELS_16[15]); break;
+        case MSG_1_ALL_OFF:        i2cMasterSend(0x00, 8, ALL_OFF); break;
+        case MSG_1_ALL_ON:         i2cMasterSend(0x00, 8, ALL_ON); break;
+        case 0x40:                 i2cMasterSend(0x00, 24, G_LEVELS[0]); break;
+        case 0x41:                 i2cMasterSend(0x00, 24, G_LEVELS[1]); break;
+        case 0x42:                 i2cMasterSend(0x00, 24, G_LEVELS[2]); break;
+        case 0x43:                 i2cMasterSend(0x00, 24, G_LEVELS[3]);   break;
+        case 0x44:                 i2cMasterSend(0x00, 24, G_LEVELS[4]); break;
+        case 0x45:                 i2cMasterSend(0x00, 24, G_LEVELS[5]); break;
+        case 0x46:                 i2cMasterSend(0x00, 24, G_LEVELS[6]); break;
+        case 0x47:                 i2cMasterSend(0x00, 24, G_LEVELS[7]); break;
+        case MSG_1_LED_TOG:        ledBlink(); break;
+        case MSG_1_CTR_RESET:      SystemReset();  break;
+        case MSG_1_BENCH_PATTERN:  benchmark_pattern(); break;
+        case MSG_1_G_LEVEL_0:      i2cMasterSend(0x00, 32, G_LEVELS_16[0]); break;
+        case MSG_1_G_LEVEL_1:      i2cMasterSend(0x00, 32, G_LEVELS_16[1]); break;
+        case MSG_1_G_LEVEL_2:      i2cMasterSend(0x00, 32, G_LEVELS_16[2]); break;
+        case MSG_1_G_LEVEL_3:      i2cMasterSend(0x00, 32, G_LEVELS_16[3]); break;
+        case MSG_1_G_LEVEL_4:      i2cMasterSend(0x00, 32, G_LEVELS_16[4]); break;
+        case MSG_1_G_LEVEL_5:      i2cMasterSend(0x00, 32, G_LEVELS_16[5]); break;
+        case MSG_1_G_LEVEL_6:      i2cMasterSend(0x00, 32, G_LEVELS_16[6]); break;
+        case MSG_1_G_LEVEL_7:      i2cMasterSend(0x00, 32, G_LEVELS_16[7]); break;
+        case MSG_1_G_LEVEL_8:      i2cMasterSend(0x00, 32, G_LEVELS_16[8]); break;
+        case MSG_1_G_LEVEL_9:      i2cMasterSend(0x00, 32, G_LEVELS_16[9]); break;
+        case MSG_1_G_LEVEL_10:     i2cMasterSend(0x00, 32, G_LEVELS_16[10]); break;
+        case MSG_1_G_LEVEL_11:     i2cMasterSend(0x00, 32, G_LEVELS_16[11]); break;
+        case MSG_1_G_LEVEL_12:     i2cMasterSend(0x00, 32, G_LEVELS_16[12]); break;
+        case MSG_1_G_LEVEL_13:     i2cMasterSend(0x00, 32, G_LEVELS_16[13]); break;
+        case MSG_1_G_LEVEL_14:     i2cMasterSend(0x00, 32, G_LEVELS_16[14]); break;
+        case MSG_1_G_LEVEL_15:     i2cMasterSend(0x00, 32, G_LEVELS_16[15]); break;
         
-        case 0x10:  // turn laser on
+        case MSG_1_LASER_ON:  // turn laser on
             g_b_laseractive = TRUE;
             break;
             
-        case 0x11:  // turn laser off
+        case MSG_1_LASER_OFF:  // turn laser off
             g_b_laseractive = FALSE;
             // turn off the lines that may be connected
             digitalWrite(DIO_LASER, LOW);
             break;
             
-        case 0x12:  // turn on compression for identical elements
+        case MSG_1_IDENT_COMPRESS_ON:  // turn on compression for identical elements
             g_ident_compress = TRUE;
             break;
             
-        case 0x13:  // turn off compression for identical elements
+        case MSG_1_IDENT_COMPRESS_OFF:  // turn off compression for identical elements
             g_ident_compress = FALSE;
             break;
             
-        case 0x14:  //synchronize the SDInfo.mat with the one in the PC
+        case MSG_1_SYNC_SD_INFO:  //synchronize the SDInfo.mat with the one in the PC
             dump_mat();
             break;
             
-        case 0x15:  //get current version
+        case MSG_1_GET_VERSION:  //get current version
             xprintf(PSTR("Current version number is %s.\n"), VERSION);
             break;
             
-        case 0x16:   //show the bus number
+        case MSG_1_SHOW_BUS_NUMBER:   //show the bus number
             for (i = 1; i <= 128; i++)
             {
                 CMD[0] = 0xFE; CMD[1] = g_ch_from_panel[i];
@@ -576,40 +577,40 @@ void handle_message_length_1(uint8_t *msg_buffer)
             }
             break;
             
-        case 0x17:  // turn on quiet_mode, no message sent out
+        case MSG_1_QUIET_MODE_ON:  // turn on quiet_mode, no message sent out
             g_b_quiet_mode = TRUE;
             break;
             
-        case 0x18:  // turn off quiet_mode, essage sent out
+        case MSG_1_QUIET_MODE_OFF:  // turn off quiet_mode, essage sent out
             g_b_quiet_mode = FALSE;
             break;
               
-        case 0x19:  // update GUI information
+        case MSG_1_UPDATE_GUI_INFO:  // update GUI information
             xprintf(PSTR("update: %d %d %d %d %d %d %d %d:\n"), g_gain_x, g_bias_x, g_x_initial, g_mode_x, g_gain_y, g_bias_y, g_y_initial, g_mode_y);
           break;
             
-        case 0x21:    // working mode 1 = default mode = controller mode
+        case MSG_1_CONTROLLER_MODE:    // working mode 1 = default mode = controller mode
             eeprom_write_byte(work_mode,0xff);
             xprintf(PSTR("Reset controller to work in the controller mode!\n"));
             break;
 
-        case 0x22:
+        case MSG_1_PC_DUMPING_MODE:
             eeprom_write_byte(work_mode,0x00);
             xprintf(PSTR("Reset controller to work in the PC dumping mode!\n"));
             break;
             
             
-        case 0x23: //using Int3 external trigger mode
+        case MSG_1_ENABLE_EXTERN_TRIG: //using Int3 external trigger mode
             PORTK.INT0MASK = 0x08;      //Int3 is used as source for port interrupt 0
             xprintf(PSTR("Enabled Int3 external trigger mode is on!\n"));
             break;
             
-        case 0x24: //disable int3 external trigger mode
+        case MSG_1_DISABLE_EXTERN_TRIG: //disable int3 external trigger mode
             PORTK.INT0MASK = 0x00;      //Int3 is used as source for port interrupt 0
             xprintf(PSTR("Disabled Int3 external trigger mode!\n"));
             break;        
 
-        case 0x26: //read and set resolution for x and y
+        case MSG_1_READ_AND_SET_MAX_VOLTAGE: //read and set resolution for x and y
 
             for (i=0; i<n_sample; i++)
             {
@@ -635,43 +636,43 @@ void handle_message_length_2(uint8_t *msg_buffer)
     argument_byte = msg_buffer[1];
     switch(msg_buffer[0])
     {
-        case 0x01: //sends a reset command out to panel at target address
+        case MSG_2_RESET: //sends a reset command out to panel at target address
             i2cMasterSend(argument_byte, 2, RESET);
             break;
             
-        case 0x02: //sends a display command out to panel at target address
+        case MSG_2_DISPLAY: //sends a display command out to panel at target address
             i2cMasterSend(argument_byte, 2, DISPLAY);
             break;
             
-        case 0x03:   //set pattern
+        case MSG_2_SET_PATTERN_ID:   //set pattern
             set_pattern(argument_byte);      //pattern x - specified in argument_byte
             break;
             
-        case 0x04: // this is an ADC test command
+        case MSG_2_ADC_TEST: // this is an ADC test command
             test_ADC(argument_byte);  //here argument_byte is a channel, 0-7 to test ADC/DAC system
             break;
             
-        case 0x05: // this is a DIO test command
+        case MSG_2_DIO_TEST: // this is a DIO test command
             test_DIO(argument_byte);  //here argument_byte is a channel, 0-7 to test ADC/DAC system
             break;
             
-        case 0x06: // this is a trigger rate set command
+        case MSG_2_SET_TRIGGER_RATE: // this is a trigger rate set command
             g_trigger_rate = argument_byte*2;  //here argument_byte is a trigger rate
             break;
             
-        case 0x07:   //flash panel#
+        case MSG_2_FLASH_PANEL:   //flash panel#
             flash_panel(argument_byte); //here argument_byte is a panel number
             break;
             
-        case 0x08:   //eeprom panel#
+        case MSG_2_EEPROM_PANEL:   //eeprom panel#
             eeprom_panel(argument_byte); //here argument_byte is a panel number
             break;
             
-        case 0x09:   //set arena configuration
+        case MSG_2_SET_CONFIG_ID:   //set arena configuration
             set_hwConfig(argument_byte);      //configuration x - specified in argument_byte
             break;    
             
-        case 0x10:  // get ADC value from a ADC channel (1-4)
+        case MSG_2_GET_ADC_VALUE:  // get ADC value from a ADC channel (1-4)
             xprintf(PSTR("ADC_value =  %d:\n"), analogRead(argument_byte - 1));
             break;    
             
@@ -689,7 +690,7 @@ void handle_message_length_3(uint8_t *msg_buffer)
     
     switch(msg_buffer[0])
     {
-        case 0xFF:  //address panel
+        case MSG_3_ADDRESS:  //address panel
             target_panel_addr = msg_buffer[1];  //put in error check, in range < 127
             //sends a reset command out to panel at target address
             
@@ -706,7 +707,8 @@ void handle_message_length_3(uint8_t *msg_buffer)
             //i2cMasterSend(target_panel_addr, 2, RESET);
             
             _delay_ms(2200);
-            CMD[0] = 0xFF; CMD[1] = msg_buffer[2];   //send change address command
+            CMD[0] = 0xFF;
+            CMD[1] = msg_buffer[2];   //send change address command
             
             //Since the panel can be located in any of the four channels,
             // the command should be sent to all channels.
@@ -726,46 +728,46 @@ void handle_message_length_3(uint8_t *msg_buffer)
             
             break;
             
-        case 0x10:   // set_mode()
+        case MSG_3_SET_MODE:   // set_mode()
             g_mode_x = msg_buffer[1];
             g_mode_y = msg_buffer[2];
             //put in an error message if value is not 0, 1, or 2.
             break;
             
-        case 0x15:   //this is a set position function
+        case MSG_3_SET_POSFUNC_ID:   //this is a set position function
             if (msg_buffer[2] == 0)
                 set_default_func(msg_buffer[1]);
             else
                 set_pos_func(msg_buffer[1], msg_buffer[2]);
             break;
             
-        case 0x20:   //this is a set velocity function
+        case MSG_3_SET_VELFUNC_ID:   //this is a set velocity function
             if (msg_buffer[2] == 0)
                 set_default_func(msg_buffer[1]);
             else
                 set_vel_func(msg_buffer[1], msg_buffer[2]);
             break;
             
-        case 0x25: // this is a set function generator frequency
+        case MSG_3_SET_FUNCX_FREQ: // this is a set function generator frequency
             funcX_freq = (uint16_t) msg_buffer[1] + (256*msg_buffer[2]);
             g_period_func_x = OVERFLOW_PERIOD/funcX_freq;
             if (!g_b_quiet_mode)
                 xprintf(PSTR("function X update frequency = %u.\n"), funcX_freq);
             break;
             
-        case 0x30: // this is a set function generator frequency
+        case MSG_3_SET_FUNCY_FREQ: // this is a set function generator frequency
             funcY_freq = (uint16_t) msg_buffer[1] + (256*msg_buffer[2]);
             g_period_func_y = OVERFLOW_PERIOD/funcY_freq;
             if (!g_b_quiet_mode)
                 xprintf(PSTR("function Y update frequency = %u.\n"), funcY_freq);
             break;
             
-        case 0x35: //set g_x_adc_max and g_y_adc_max
+        case MSG_3_SET_MAX_VOLTAGE: //set g_x_adc_max and g_y_adc_max
             g_x_adc_max = (uint32_t)msg_buffer[1] * DAQRESOLUTION/10;
             g_y_adc_max = (uint32_t)msg_buffer[2] * DAQRESOLUTION/10;
             break;
             
-        case 0x62: // set_voltage_range_channel(ch, range)
+        case MSG_3_SET_VOLTAGE_RANGE_ADC: // set_voltage_range_channel(ch, range)
         	set_voltage_range_channel(msg_buffer[1], msg_buffer[2]);
         	break;
 
@@ -775,34 +777,34 @@ void handle_message_length_3(uint8_t *msg_buffer)
         // E.g. set_mode_custom_x_pos(0x14, 0x01) means that xposition = funcx + adc2 - adc0
         //                                               and xrate = 0
         //
-		//      set_mode_custom_x_vel(0x08, 0x00) means that xrate = adc3
-   		//      set_mode_custom_x_vel(0x00, 0x08) means that xrate = -adc3
+		//      set_mode_vel_custom_x(0x08, 0x00) means that xrate = adc3
+   		//      set_mode_vel_custom_x(0x00, 0x08) means that xrate = -adc3
 
 
-        // set_mode_custom_x_pos(+xxxABCDEF, -xxxABCDEF), Set which input sources are used for x positions.  bitA: funcy, bitB:funcx, bitC:adc3, bitD:adc2, bitE:adc1, bitF:adc0'},
-        case 0x63:
-        	g_mode_x = 0x62;
+        // set_mode_pos_custom_x(+xxxABCDEF, -xxxABCDEF), Set which input sources are used for x positions.  bitA: funcy, bitB:funcx, bitC:adc3, bitD:adc2, bitE:adc1, bitF:adc0'},
+        case MSG_3_SET_MODE_POS_CUSTOM_X:
+        	g_mode_x = MODE_POS_CUSTOM;
         	g_customPlus_x = msg_buffer[1];
         	g_customMinus_x = msg_buffer[2];
         	break;
 
-        // set_mode_custom_y_pos(+xxxABCDEF, -xxxABCDEF), Set which input sources are used for x positions.  bitA: funcy, bitB:funcx, bitC:adc3, bitD:adc2, bitE:adc1, bitF:adc0'},
-        case 0x64:
-        	g_mode_y = 0x62;
+        // set_mode_pos_custom_y(+xxxABCDEF, -xxxABCDEF), Set which input sources are used for x positions.  bitA: funcy, bitB:funcx, bitC:adc3, bitD:adc2, bitE:adc1, bitF:adc0'},
+        case MSG_3_SET_MODE_POS_CUSTOM_Y:
+        	g_mode_y = MODE_POS_CUSTOM;
         	g_customPlus_y = msg_buffer[1];
         	g_customMinus_y = msg_buffer[2];
         	break;
 
-        // set_mode_custom_x_vel(+xxxABCDEF, -xxxABCDEF), Set which input sources are used for x rates.  bitA: funcy, bitB:funcx, bitC:adc3, bitD:adc2, bitE:adc1, bitF:adc0'},
-        case 0x65:
-        	g_mode_x = 0x61;
+        // set_mode_vel_custom_x(+xxxABCDEF, -xxxABCDEF), Set which input sources are used for x rates.  bitA: funcy, bitB:funcx, bitC:adc3, bitD:adc2, bitE:adc1, bitF:adc0'},
+        case MSG_3_SET_MODE_VEL_CUSTOM_X:
+        	g_mode_x = MODE_VEL_CUSTOM;
         	g_customPlus_x = msg_buffer[1];
         	g_customMinus_x = msg_buffer[2];
         	break;
 
-        // set_mode_custom_y_vel(+xxxABCDEF, -xxxABCDEF), Set which input sources are used for x rates.  bitA: funcy, bitB:funcx, bitC:adc3, bitD:adc2, bitE:adc1, bitF:adc0'},
-        case 0x66:
-        	g_mode_y = 0x61;
+        // set_mode_vel_custom_y(+xxxABCDEF, -xxxABCDEF), Set which input sources are used for x rates.  bitA: funcy, bitB:funcx, bitC:adc3, bitD:adc2, bitE:adc1, bitF:adc0'},
+        case MSG_3_SET_MODE_VEL_CUSTOM_Y:
+        	g_mode_y = MODE_VEL_CUSTOM;
         	g_customPlus_y = msg_buffer[1];
         	g_customMinus_y = msg_buffer[2];
         	break;
@@ -819,15 +821,17 @@ void handle_message_length_4(uint8_t *msg_buffer)
     //'set_ao'
     switch(msg_buffer[0])
     {
-        case 0x10: //set a value ranging from 0-32767 (0-10V) to one of the DAC1~4. 
+        case MSG_4_SET_AO_POS: //set a value ranging from 0-32767 (0-10V) to one of the DAC1~4.
             setVal = (int16_t) msg_buffer[2] + (256*msg_buffer[3]);
             analogWrite(msg_buffer[1] - 1, setVal);
             break;
-        case 0x11:  //set a value ranging from -32767 to 0(-10V-0)  to one of the DAC1-4 
+
+        case MSG_4_SET_AO_NEG:  //set a value ranging from -32767 to 0(-10V-0)  to one of the DAC1-4
             setVal = (int16_t) msg_buffer[2] + (256*msg_buffer[3]);
             setVal = -setVal;
             analogWrite(msg_buffer[1] - 1, setVal);
             break;
+
         default:   
             i2cMasterSend(0x00, 8, ERROR_CODES[4]);
     }
@@ -838,7 +842,7 @@ void handle_message_length_5(uint8_t *msg_buffer)
 {
     switch(msg_buffer[0])
     {
-        case 0x70:   //put in a bunch of type casts, because of mysterious error dealing with frame index above 128.
+        case MSG_5_SET_POSITION:   //put in a bunch of type casts, because of mysterious error dealing with frame index above 128.
             //'set_position'
             g_x = (uint8_t)msg_buffer[1] + (256*(uint8_t)msg_buffer[2]);
             g_y = (uint8_t)msg_buffer[3] + (256*(uint8_t)msg_buffer[4]);
@@ -853,7 +857,7 @@ void handle_message_length_5(uint8_t *msg_buffer)
             fetch_and_display_frame(&g_file_pattern, g_index_frame, g_x, g_y);
             break;
 
-        case 0x71:
+        case MSG_5_SEND_GAIN_BIAS:
             //'send_gain_bias', all of these are signed byte values
             g_gain_x = msg_buffer[1];
             g_bias_x = msg_buffer[2];
@@ -861,7 +865,6 @@ void handle_message_length_5(uint8_t *msg_buffer)
             g_bias_y = msg_buffer[4];
             if (!g_b_quiet_mode)
                 xprintf(PSTR("set_gain_bias: gain_x= %d,  bias_x= %d, gain_y= %d, bias_y=%d\n"), g_gain_x, g_bias_x, g_gain_y, g_bias_y);
-            
             break;
         
         default:
@@ -1079,14 +1082,14 @@ void fetch_and_display_frame(FIL *pFile, uint16_t index_frame, uint16_t Xindex, 
     }
     
     //update analog out
-    if (g_mode_x != 5)
+    if (g_mode_x != MODE_POS_DEBUG)
     {
         dac_x = ((uint32_t)Xindex + 1)*32767/g_x_max;
         analogWrite(0, dac_x); // make it a value in the range 0 - 32767 (0 - 10V)
     }
 
     
-    if (g_mode_y != 5)
+    if (g_mode_y != MODE_POS_DEBUG)
     {
         dac_y = ((uint32_t)Yindex + 1)*32767/g_y_max;
         analogWrite(1, dac_y); // make it a value in the range 0 - 32767 (0 - 10V)
@@ -1159,12 +1162,12 @@ void update_display_for_rates(void)
     
     switch(g_mode_x)
     {
-        case 0:   // Open loop - use function generator to set x rate
+        case MODE_VEL_OPENLOOP:   // Open loop - use function generator to set x rate
             src = g_buf_func_x[g_index_func_x_read];
             xRate = (int16_t)((int32_t)g_gain_x*(int32_t)src + (int32_t)g_bias_x)/10;
             break;
 
-        case 1: // Closed loop, use CH0 to set x rate.
+        case MODE_VEL_CLOSEDLOOP: // Closed loop, use CH0 to set x rate.
         	srcx_filtered_prev = srcx_filtered; //the previous value
             src = analogRead(0);  // 0 to 8191; on -5/+5 or 0/+10 scales, 1 volt = 819 values.  src/8.191 to get 100.0 frames/sec.  So 1volt==100fps.
             srcx_filtered = (6*srcx_filtered_prev + 4*(int32_t)src)/10;   // A fast exponentially weighted moving average.
@@ -1172,26 +1175,26 @@ void update_display_for_rates(void)
             // xRate = CLIP(xRate, -256, 256);
             break;
 
-        case 2: // Closed loop w bias - use CH0 + function to set x rate:  xRate = m*adc0 + b + f(t)
+        case MODE_VEL_CLOSEDLOOP_FUNCTION: // Closed loop w bias - use CH0 + function to set x rate:  xRate = m*adc0 + b + f(t)
             srcx_filtered_prev = srcx_filtered; //the previous value
             src = analogRead(0);
             srcx_filtered = (6*srcx_filtered_prev + 4*src)/10;   // A fast exponentially weighted moving average.
             xRate = (int16_t)((int32_t)g_gain_x * HzFromAdc(srcx_filtered) + (int32_t)g_bias_x)/10 + g_buf_func_x[g_index_func_x_read];
             break;
 
-        case 3: 
+        case MODE_POS_ADC:
         	xRate = 0;
             break;
 
-        case 4:
+        case MODE_POS_FUNCTION:
         	xRate = 0;
             break;
 
-        case 5:
+        case MODE_POS_DEBUG:
             xRate = 0;
             break;
 
-        case 0x61: // Custom velocity mode.
+        case MODE_VEL_CUSTOM: // Custom velocity mode.
         	adc0  = analogRead(0);
         	adc1  = analogRead(1);
         	adc2  = analogRead(2);
@@ -1202,7 +1205,7 @@ void update_display_for_rates(void)
         			        + (BITVAL(3,g_customPlus_x)-BITVAL(3,g_customMinus_x))*adc3
         			        + (BITVAL(4,g_customPlus_x)-BITVAL(4,g_customMinus_x))*g_buf_func_x[g_index_func_x_read]) + g_bias_x;
 
-        case 0x62: // Custom position mode.
+        case MODE_POS_CUSTOM: // Custom position mode.
         	xRate = 0;
     }
 
@@ -1210,13 +1213,13 @@ void update_display_for_rates(void)
     
     switch(g_mode_y)
     {
-        case 0:   // open loop - use function generator to set y rate
+        case MODE_VEL_OPENLOOP:   // open loop - use function generator to set y rate
             src = g_buf_func_y[g_index_func_y_read];
             yRate = (int16_t)((int32_t)g_gain_y*(int32_t)src + (int32_t)g_bias_y)/10;
             break;        	//yRate = g_gain_y*(b0*adc0 + b1*adc1 + b2*adc2 + b3*adc3 + b4*g_buf_func_y[g_index_func_y_read]) + g_bias_y;
 
 
-        case 1: //closed loop, use CH1 to set y rate
+        case MODE_VEL_CLOSEDLOOP: //closed loop, use CH1 to set y rate
         	srcy_filtered_prev = srcy_filtered; //the previous value
             src = analogRead(1);  // 0 to 8191; on -5/+5 or 0/+10 scales, 1 volt = 819 values.  adc/8.191 to get 100.0 frames/sec
             srcy_filtered = (6*srcy_filtered_prev + 4*src)/10;   // A fast exponentially weighted moving average.
@@ -1224,26 +1227,26 @@ void update_display_for_rates(void)
             // yRate = CLIP(yRate, -256, 256);
             break;
 
-        case 2: //closed loop w bias - use CH2 - CH3, and function gen. to set y rate
+        case MODE_VEL_CLOSEDLOOP_FUNCTION: //closed loop w bias - use CH2 - CH3, and function gen. to set y rate
         	srcy_filtered_prev = srcy_filtered; //the previous value
         	src = analogRead(1); // 1 volt = 102
         	srcy_filtered = (6*srcy_filtered_prev + 4*src)/10;   //this is a 60% old value, 40% new value smoother
             yRate = (int16_t)((int32_t)g_gain_y * HzFromAdc(srcy_filtered) + (int32_t)g_bias_y)/10 + g_buf_func_y[g_index_func_y_read];
             break;
 
-        case 3:
+        case MODE_POS_ADC:
         	yRate = 0;
             break;
 
-        case 4:
+        case MODE_POS_FUNCTION:
         	yRate = 0;
             break;
 
-        case 5:  // this is the function gen DBG mode - don't run y, set rate to zero
+        case MODE_POS_DEBUG:  // this is the function gen DBG mode - don't run y, set rate to zero
             yRate = 0;
             break;
 
-        case 0x61: // Custom velocity mode.
+        case MODE_VEL_CUSTOM: // Custom velocity mode.
         	adc0  = analogRead(0);
         	adc1  = analogRead(1);
         	adc2  = analogRead(2);
@@ -1254,7 +1257,7 @@ void update_display_for_rates(void)
         			        + (BITVAL(3,g_customPlus_y)-BITVAL(3,g_customMinus_y))*adc3
         			        + (BITVAL(4,g_customPlus_y)-BITVAL(4,g_customMinus_y))*g_buf_func_y[g_index_func_y_read]) + g_bias_y;
 
-        case 0x62: // Custom position mode.
+        case MODE_POS_CUSTOM: // Custom position mode.
         	yRate = 0;
     }
     
@@ -1864,13 +1867,13 @@ void update_display_for_position_x(void)
 
         switch(g_mode_x)
         {
-            case 3:
+            case MODE_POS_ADC:
                 adc = analogRead(2);
                 g_x = (uint32_t)adc * (uint32_t)g_x_max / (uint32_t)g_x_adc_max; // Change the scale from (0,adcmax) to (0,xmax).
                 g_index_frame = FRAMEFROMXY(g_x, g_y);
                 break;
 
-            case 4:
+            case MODE_POS_FUNCTION:
                 x_tmp = g_x_initial + g_buf_func_x[g_index_func_x_read];
 
                 // Wrap around if necessary.
@@ -1882,13 +1885,13 @@ void update_display_for_position_x(void)
                 g_index_frame = FRAMEFROMXY(g_x, g_y);
                 break;
 
-            case 5:   // in function DBG mode - show the function gen
+            case MODE_POS_DEBUG:   // in function DBG mode - show the function gen
                 //3277 is converted to 1V by DAC, we amplify function value so value 100 is about 1V
                 dac_x = g_buf_func_x[g_index_func_x_read]*33;
                 analogWrite(0, dac_x); // make it a value in the range -32767 - 32767 (-10V - 10V)
                 break;
 
-            case 0x62:  // Custom position mode.
+            case MODE_POS_CUSTOM:  // Custom position mode.
             	adc0  = analogRead(0);
             	adc1  = analogRead(1);
             	adc2  = analogRead(2);
@@ -1928,13 +1931,13 @@ void update_display_for_position_y(void)
 
         switch(g_mode_y)
         {
-            case 3: // POS mode, use CH3 to set the frame position (pos ctrl, not vel ctrl)
+            case MODE_POS_ADC: // POS mode, use CH3 to set the frame position (pos ctrl, not vel ctrl)
                 adc = analogRead(3);
                 g_y = (uint32_t)adc * (uint32_t)g_y_max / (uint32_t)g_y_adc_max; // Change the scale from (0,adcmax) to (0,ymax).
                 g_index_frame = FRAMEFROMXY(g_x, g_y);
                 break;
 
-            case 4:
+            case MODE_POS_FUNCTION:
                 y_tmp = (g_y_initial + g_buf_func_y[g_index_func_y_read]);
 
                 // Wrap around if necessary.
@@ -1946,13 +1949,13 @@ void update_display_for_position_y(void)
                 g_index_frame = FRAMEFROMXY(g_x, g_y);
                 break;
 
-            case 5:   // in function DBG mode - show the function gen
+            case MODE_POS_DEBUG:   // in function DBG mode - show the function gen
                 //3277 is converted to 1V by DAC, we amplify function value so value 100 is about 1V
                 dac_y = g_buf_func_y[g_index_func_y_read]*33;
                 analogWrite(1, dac_y); // make it a value in the range -32767 - 32767 (-10V - 10V)
                 break;
 
-            case 0x62:  // Custom position mode.
+            case MODE_POS_CUSTOM:  // Custom position mode.
             	adc0  = analogRead(0);
             	adc1  = analogRead(1);
             	adc2  = analogRead(2);

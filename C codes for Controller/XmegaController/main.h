@@ -16,6 +16,93 @@
 #define TWI_BUFFER_LENGTH HEADER_SIZE+PAGE_SIZE
 
 #define EEPROM __attribute__((section(".eeprom")))
+
+
+// Message command ID's.
+#define MSG_1_START                    0x20
+#define MSG_1_START_W_TRIG             0x25
+#define MSG_1_STOP                     0x30
+#define MSG_1_STOP_W_TRIG              0x35
+#define MSG_1_CLEAR                    0xF0
+#define MSG_1_ALL_OFF                  0x00
+#define MSG_1_ALL_ON                   0xFF
+#define MSG_1_G_LEVEL_0                0x90
+#define MSG_1_G_LEVEL_1                0x91
+#define MSG_1_G_LEVEL_2                0x92
+#define MSG_1_G_LEVEL_3                0x93
+#define MSG_1_G_LEVEL_4                0x94
+#define MSG_1_G_LEVEL_5                0x95
+#define MSG_1_G_LEVEL_6                0x96
+#define MSG_1_G_LEVEL_7                0x97
+#define MSG_1_G_LEVEL_8                0x98
+#define MSG_1_G_LEVEL_9                0x99
+#define MSG_1_G_LEVEL_10               0x9A
+#define MSG_1_G_LEVEL_11               0x9B
+#define MSG_1_G_LEVEL_12               0x9C
+#define MSG_1_G_LEVEL_13               0x9D
+#define MSG_1_G_LEVEL_14               0x9E
+#define MSG_1_G_LEVEL_15               0x9F
+#define MSG_1_LED_TOG                  0x50
+#define MSG_1_CTR_RESET                0x60
+#define MSG_1_BENCH_PATTERN            0x70
+#define MSG_1_LASER_ON                 0x10
+#define MSG_1_LASER_OFF                0x11
+#define MSG_1_IDENT_COMPRESS_ON        0x12
+#define MSG_1_IDENT_COMPRESS_OFF       0x13
+#define MSG_1_SYNC_SD_INFO             0x14
+#define MSG_1_GET_VERSION              0x15
+#define MSG_1_SHOW_BUS_NUMBER          0x16
+#define MSG_1_QUIET_MODE_ON            0x17
+#define MSG_1_QUIET_MODE_OFF           0x18
+#define MSG_1_UPDATE_GUI_INFO          0x19
+#define MSG_1_CONTROLLER_MODE          0x21
+#define MSG_1_PC_DUMPING_MODE          0x22
+#define MSG_1_ENABLE_EXTERN_TRIG       0x23
+#define MSG_1_DISABLE_EXTERN_TRIG      0x24
+#define MSG_1_READ_AND_SET_MAX_VOLTAGE 0x26
+
+#define MSG_2_RESET                    0x01
+#define MSG_2_DISPLAY                  0x02
+#define MSG_2_SET_PATTERN_ID           0x03
+#define MSG_2_ADC_TEST                 0x04
+#define MSG_2_DIO_TEST                 0x05
+#define MSG_2_SET_TRIGGER_RATE         0x06
+#define MSG_2_FLASH_PANEL              0x07
+#define MSG_2_EEPROM_PANEL             0x08
+#define MSG_2_SET_CONFIG_ID            0x09
+#define MSG_2_GET_ADC_VALUE            0x10
+
+#define MSG_3_SET_MODE                 0x10
+#define MSG_3_ADDRESS                  0xFF
+#define MSG_3_SET_POSFUNC_ID           0x15
+#define MSG_3_SET_VELFUNC_ID           0x20
+#define MSG_3_SET_FUNCX_FREQ           0x25
+#define MSG_3_SET_FUNCY_FREQ           0x30
+#define MSG_3_SET_MAX_VOLTAGE          0x35
+#define MSG_3_SET_VOLTAGE_RANGE_ADC    0x62
+#define MSG_3_SET_MODE_POS_CUSTOM_X    0x63
+#define MSG_3_SET_MODE_POS_CUSTOM_Y    0x64
+#define MSG_3_SET_MODE_VEL_CUSTOM_X    0x65
+#define MSG_3_SET_MODE_VEL_CUSTOM_Y    0x66
+
+#define MSG_4_SET_AO_POS              0x10
+#define MSG_4_SET_AO_NEG              0x11
+
+#define MSG_5_SET_POSITION            0x70
+#define MSG_5_SEND_GAIN_BIAS          0x71
+
+
+// Define mode numbers.
+#define MODE_VEL_OPENLOOP              0
+#define MODE_VEL_CLOSEDLOOP            1
+#define MODE_VEL_CLOSEDLOOP_FUNCTION   2
+#define MODE_POS_ADC                   3
+#define MODE_POS_FUNCTION              4
+#define MODE_POS_DEBUG                 5
+#define MODE_VEL_CUSTOM                0x61
+#define MODE_POS_CUSTOM                0x62
+
+
 void init_all(void);
 
 //routines for handling the incomming messages over the UART

@@ -32,6 +32,9 @@
 #define DAQRESOLUTION       ((1<<13)-1)
 #define HzFromAdc(src)      ((((src)-(DAQRESOLUTION+1)/2)*1000)/8191)
 
+#define BITVAL(b,val)      (((val) & (1<<(b)))>>(b)) // Extract the value of a single bit in a value.
+
+
 // Globals - try to cut down on these.
 volatile uint8_t  g_b_running = FALSE;
 uint8_t           g_b_laseractive = FALSE;
@@ -81,6 +84,9 @@ int8_t            g_gain_x, g_gain_y;    // Gain is x10.  So that gain=10 means 
 int8_t            g_bias_x, g_bias_y;    // Bias is x10.  So that bias=10 means an addition of 1.0.  Note allowed values -128 to +127.
 int8_t            g_b_xrate_greater_yrate=FALSE;
 uint16_t          g_trigger_rate = 200;
+
+uint8_t           g_customPlus_x=0, g_customMinus_x=0;
+uint8_t           g_customPlus_y=0, g_customMinus_y=0;
 
 FIL               g_file_pattern;        //g_file_pattern pattern file;
 FIL               g_file_func_x;        //g_file_func_x function file for x channel
@@ -773,14 +779,53 @@ void handle_message_length_3(uint8_t *msg_buffer)
                 xprintf(PSTR("function Y update frequency = %u.\n"), funcY_freq);
             break;
             
-        case 0x35: //set resolution_x and g_y_adc_max
+        case 0x35: //set g_x_adc_max and g_y_adc_max
             g_x_adc_max = (uint32_t)msg_buffer[1] * DAQRESOLUTION/10;
             g_y_adc_max = (uint32_t)msg_buffer[2] * DAQRESOLUTION/10;
             break;
             
-        case 0x62: // set_voltage_range_channel
+        case 0x62: // set_voltage_range_channel(ch, range)
         	set_voltage_range_channel(msg_buffer[1], msg_buffer[2]);
         	break;
+
+
+        // Custom modes:
+        // For each of the following custom modes, the output (i.e. xpos, ypos, xrate, yrate) may be specified to be any combination of ADC and function inputs.
+        // E.g. set_mode_custom_x_pos(0x14, 0x01) means that xposition = funcx + adc2 - adc0
+        //                                               and xrate = 0
+        //
+		//      set_mode_custom_x_vel(0x08, 0x00) means that xrate = adc3
+   		//      set_mode_custom_x_vel(0x00, 0x08) means that xrate = -adc3
+
+
+        // set_mode_custom_x_pos(+xxxABCDEF, -xxxABCDEF), Set which input sources are used for x positions.  bitA: funcy, bitB:funcx, bitC:adc3, bitD:adc2, bitE:adc1, bitF:adc0'},
+        case 0x63:
+        	g_mode_x = 0x62;
+        	g_customPlus_x = msg_buffer[1];
+        	g_customMinus_x = msg_buffer[2];
+        	break;
+
+        // set_mode_custom_y_pos(+xxxABCDEF, -xxxABCDEF), Set which input sources are used for x positions.  bitA: funcy, bitB:funcx, bitC:adc3, bitD:adc2, bitE:adc1, bitF:adc0'},
+        case 0x64:
+        	g_mode_y = 0x62;
+        	g_customPlus_y = msg_buffer[1];
+        	g_customMinus_y = msg_buffer[2];
+        	break;
+
+        // set_mode_custom_x_vel(+xxxABCDEF, -xxxABCDEF), Set which input sources are used for x rates.  bitA: funcy, bitB:funcx, bitC:adc3, bitD:adc2, bitE:adc1, bitF:adc0'},
+        case 0x65:
+        	g_mode_x = 0x61;
+        	g_customPlus_x = msg_buffer[1];
+        	g_customMinus_x = msg_buffer[2];
+        	break;
+
+        // set_mode_custom_y_vel(+xxxABCDEF, -xxxABCDEF), Set which input sources are used for x rates.  bitA: funcy, bitB:funcx, bitC:adc3, bitD:adc2, bitE:adc1, bitF:adc0'},
+        case 0x66:
+        	g_mode_y = 0x61;
+        	g_customPlus_y = msg_buffer[1];
+        	g_customMinus_y = msg_buffer[2];
+        	break;
+
 
         default: i2cMasterSend(0x00, 8, ERROR_CODES[3]);
     }
@@ -1219,6 +1264,19 @@ void update_display_for_rates(void)
             xRate = 0;
             break;
 
+        case 0x61: // Custom velocity mode.
+        	adc0  = analogRead(0);
+        	adc1  = analogRead(1);
+        	adc2  = analogRead(2);
+        	adc3  = analogRead(3);
+        	xRate = g_gain_x*((BITVAL(0,g_customPlus_x)-BITVAL(0,g_customMinus_x))*adc0
+        			        + (BITVAL(1,g_customPlus_x)-BITVAL(1,g_customMinus_x))*adc1
+        			        + (BITVAL(2,g_customPlus_x)-BITVAL(2,g_customMinus_x))*adc2
+        			        + (BITVAL(3,g_customPlus_x)-BITVAL(3,g_customMinus_x))*adc3
+        			        + (BITVAL(4,g_customPlus_x)-BITVAL(4,g_customMinus_x))*g_buf_func_x[g_index_func_x_read]) + g_bias_x;
+
+        case 0x62: // Custom position mode.
+        	xRate = 0;
     }
 
     
@@ -1228,7 +1286,8 @@ void update_display_for_rates(void)
         case 0:   // open loop - use function generator to set y rate
             src = g_buf_func_y[g_index_func_y_read];
             yRate = (int16_t)((int32_t)g_gain_y*(int32_t)src + (int32_t)g_bias_y)/10;
-            break;
+            break;        	//yRate = g_gain_y*(b0*adc0 + b1*adc1 + b2*adc2 + b3*adc3 + b4*g_buf_func_y[g_index_func_y_read]) + g_bias_y;
+
 
         case 1: //closed loop, use CH1 to set y rate
         	srcy_filtered_prev = srcy_filtered; //the previous value
@@ -1260,6 +1319,19 @@ void update_display_for_rates(void)
             yRate = 0;
             break;
 
+        case 0x61: // Custom velocity mode.
+        	adc0  = analogRead(0);
+        	adc1  = analogRead(1);
+        	adc2  = analogRead(2);
+        	adc3  = analogRead(3);
+        	yRate = g_gain_y*((BITVAL(0,g_customPlus_y)-BITVAL(0,g_customMinus_y))*adc0
+        			        + (BITVAL(1,g_customPlus_y)-BITVAL(1,g_customMinus_y))*adc1
+        			        + (BITVAL(2,g_customPlus_y)-BITVAL(2,g_customMinus_y))*adc2
+        			        + (BITVAL(3,g_customPlus_y)-BITVAL(3,g_customMinus_y))*adc3
+        			        + (BITVAL(4,g_customPlus_y)-BITVAL(4,g_customMinus_y))*g_buf_func_y[g_index_func_y_read]) + g_bias_y;
+
+        case 0x62: // Custom position mode.
+        	yRate = 0;
     }
     
     //in the above x,y_val computation, there is a div by 10 to take away gain scaling
@@ -2017,10 +2089,11 @@ void set_vel_func(uint8_t channel, uint8_t id_func)
 //
 void update_display_for_position_x(void)
 {
-    uint16_t  adc;
+    uint16_t adc;
     int16_t  dac_x;
     int16_t  x_tmp;
     int32_t  x;
+    int16_t  adc0, adc1, adc2, adc3;
 
     
     if (g_filllevel_buf_func_x)
@@ -2054,7 +2127,19 @@ void update_display_for_position_x(void)
                 dac_x = g_buf_func_x[g_index_func_x_read]*33;
                 analogWrite(0, dac_x); // make it a value in the range -32767 - 32767 (-10V - 10V)
                 break;
-            
+
+            case 0x62:  // Custom position mode.
+            	adc0  = analogRead(0);
+            	adc1  = analogRead(1);
+            	adc2  = analogRead(2);
+            	adc3  = analogRead(3);
+            	g_x = g_gain_x*((BITVAL(0,g_customPlus_x)-BITVAL(0,g_customMinus_x))*adc0
+            	              + (BITVAL(1,g_customPlus_x)-BITVAL(1,g_customMinus_x))*adc1
+            	              + (BITVAL(2,g_customPlus_x)-BITVAL(2,g_customMinus_x))*adc2
+            	              + (BITVAL(3,g_customPlus_x)-BITVAL(3,g_customMinus_x))*adc3
+            	              + (BITVAL(4,g_customPlus_x)-BITVAL(4,g_customMinus_x))*g_buf_func_x[g_index_func_x_read]) + g_bias_x;
+            	break;
+
         }
     }
     else
@@ -2072,6 +2157,7 @@ void update_display_for_position_y(void)
     int16_t  dac_y;
     int16_t  y_tmp;
     int32_t  y;
+    int16_t  adc0, adc1, adc2, adc3;
 
 
     if (g_filllevel_buf_func_y)
@@ -2102,6 +2188,18 @@ void update_display_for_position_y(void)
                 dac_y = g_buf_func_y[g_index_func_y_read]*33;
                 analogWrite(1, dac_y); // make it a value in the range -32767 - 32767 (-10V - 10V)
                 break;
+
+            case 0x62:  // Custom position mode.
+            	adc0  = analogRead(0);
+            	adc1  = analogRead(1);
+            	adc2  = analogRead(2);
+            	adc3  = analogRead(3);
+            	g_y = g_gain_y*((BITVAL(0,g_customPlus_y)-BITVAL(0,g_customMinus_y))*adc0
+            	              + (BITVAL(1,g_customPlus_y)-BITVAL(1,g_customMinus_y))*adc1
+            	              + (BITVAL(2,g_customPlus_y)-BITVAL(2,g_customMinus_y))*adc2
+            	              + (BITVAL(3,g_customPlus_y)-BITVAL(3,g_customMinus_y))*adc3
+            	              + (BITVAL(4,g_customPlus_y)-BITVAL(4,g_customMinus_y))*g_buf_func_y[g_index_func_y_read]) + g_bias_y;
+            	break;
 
         }
     }

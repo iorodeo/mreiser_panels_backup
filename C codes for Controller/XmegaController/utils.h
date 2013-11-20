@@ -114,11 +114,11 @@
 #define ADC_RR_VIN_PLUS10		0x3
 
 // Range register calculations.
-#define ADC_RR_FROM_CH(ch)     ((ch)<4 ? 0 : 1)                 // Get zero-based register number from the channel.
-#define ADC_RR_BIT_FROM_CH(ch)      (((5-((ch)-(ch>3?4:0)))<<1) + 1) // Convert a channel number to a bit position (RR0: ch0->bit11, ch1->bit9, ch2->bit7, ch3->bit5
-                                                                //                                             RR1: ch4->bit11, ch5->bit9, ch6->bit7, ch7->bit5)
-#define ADC_RR_BITS(ch,range)	((range) << ADC_RR_BIT_FROM_CH(ch))	// Get the bitfield corresponding to a channel number and voltage range.
-#define ADC_RR_CH_MASK(ch)      ((0x3) << ADC_RR_BIT_FROM_CH(ch))
+#define ADC_RR_FROM_CH(ch)     ((ch)<4 ? 0 : 1)                      // Get zero-based register number from the channel.
+#define ADC_RR_BIT_FROM_CH(ch) (((5-((ch)-(ch>3?4:0)))<<1) + 1)      // Convert a channel number to a bit position (RR0: ch0->bit11, ch1->bit9, ch2->bit7, ch3->bit5
+                                                                     //                                             RR1: ch4->bit11, ch5->bit9, ch6->bit7, ch7->bit5)
+#define ADC_RR_BITS(ch,range)  ((range) << ADC_RR_BIT_FROM_CH(ch))	 // Make a bitfield corresponding to a channel number and voltage range.
+#define ADC_RR_CH_MASK(ch)     ((0x3) << ADC_RR_BIT_FROM_CH(ch))
 
 
 static const uint8_t panelFlash[] = "panel.hex\0";
@@ -140,23 +140,23 @@ typedef struct ihexrec {
 } ihexrec_t;
 
 /* Function prototypes */
-void    CCPWrite( volatile uint8_t * address, uint8_t value );
-void    ledWrite( uint8_t led, uint8_t value );
-void    ledToggle( uint8_t led );
-void    ledBlink(void);
-void    digitalMode( uint8_t bit, uint8_t mode);
-uint8_t digitalRead( uint8_t bit );
-void    digitalWrite( uint8_t bit, uint8_t value );
-void    digitalToggle( uint8_t bit );
-int16_t analogRead( uint8_t ch );
-void    analogWrite(uint8_t ch, int16_t value);
-void    test_DIO(uint8_t ch);
-void    SystemReset(void);
-void    test_ADC(uint8_t ch);
-void    eeprom_panel(uint8_t panel_num);
-void    flash_panel(uint8_t panel_num);
-void    writeCommandToADC (uint16_t command);
-void    set_voltage_range_channel(uint8_t ch, uint8_t range);
+void     CCPWrite( volatile uint8_t * address, uint8_t value );
+void     ledWrite( uint8_t led, uint8_t value );
+void     ledToggle( uint8_t led );
+void     ledBlink(void);
+void     digitalMode( uint8_t bit, uint8_t mode);
+uint8_t  digitalRead( uint8_t bit );
+void     digitalWrite( uint8_t bit, uint8_t value );
+void     digitalToggle( uint8_t bit );
+uint16_t analogRead( uint8_t ch );
+void     analogWrite(uint8_t ch, int16_t value);
+void     test_DIO(uint8_t ch);
+void     SystemReset(void);
+void     test_ADC(uint8_t ch);
+void     eeprom_panel(uint8_t panel_num);
+void     flash_panel(uint8_t panel_num);
+void     writeCommandToADC (uint16_t command);
+void     set_voltage_range_channel(uint8_t ch, uint8_t range);
 
 static int16_t ihex_readrec(ihexrec_t * ihex, char * rec);
 static void    put_rc (FRESULT rc);

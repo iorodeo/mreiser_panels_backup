@@ -72,7 +72,6 @@ void init_all()
   TCE1.INTCTRLA = 0x02;   // Timer overflow is a medium level interrupt
 
   // Set initial default values for analog input voltage ranges.
-  // Note: if you change the ranges, also change in analogRead().
   s_command_rangeregister[0] = ADC_WRITE | ADC_RANGEREGISTER1
 									| ADC_RR_BITS(0, ADC_RR_VIN_PLUSMINUS5)
 									| ADC_RR_BITS(1, ADC_RR_VIN_PLUSMINUS5)
@@ -300,14 +299,18 @@ void digitalToggle( uint8_t bit )
 		PORTK.OUTTGL = 1 << bit;	// toggle the bit
 }
 
-int16_t analogRead( uint8_t ch )
+
+// analogRead()
+// Perform an ADC conversion, and return the result as an unsigned 16 bit integer,
+// 13 bits of which contain the conversion result.
+//
+uint16_t analogRead( uint8_t ch )
 {
-	int16_t w1;
+	int16_t     w1;
+	uint8_t     range;
 
 	if (ch <= 7)
 	{
-		// control register: ch = <ch>, mode = 00, pm = 00, code = 0, ref = 1, seq = 00
-		//coding = 0,the output coding is twos complement
 		writeCommandToADC(ADC_WRITE | ADC_CONTROLREGISTER
 							| ADC_CR_ADDRESS(ch)
 							| ADC_CR_MODE_8SINGLEENDED
@@ -316,50 +319,22 @@ int16_t analogRead( uint8_t ch )
 							| ADC_CR_REFINT
 							| ADC_CR_SEQ_NONE);
 
-		// do a conversion on the selected channel (no register write)
+		// Do a conversion on the selected channel (no register write)
+		// Output data: 3 channel id bits + sign bit + 12 conversion result
 		w1 = readConversionFromADC();
+		range = (s_command_rangeregister[ADC_RR_FROM_CH(ch)] & ADC_RR_CH_MASK(ch)) >> ADC_RR_BIT_FROM_CH(ch);		// Get the voltage range for this channel.
 
-		//ADC0-1 -5V-5V  //ADC2-7 0-10V
-		//in this way, 0v ->0, -5V -> -2047, 5V->2047
-		if (ch <= 1)
-		{
-			//-5V-0V
-			if (w1 & 1 << 12)
-			{
-				//input value is -5V-0v, ADC code from 0x1000 to 0x1fff
-				w1 = (w1 & 0x0fff)>>1;
-				w1 = w1 | 0xf800;
-				//output value now is from 0xf800 to 0xffff
-			}
-			else
-			{   //0-5V
-				//since output data : 3 channel id bits + sign bit + 12 conversion result
-				//input value is 0-5V, 12 ADC code from 0x0000 to 0x0fff
-				//remove the 3 channel id bits
-				w1 = (w1 & 0x0fff)>>1;
-				//output value is now 0x0000 to 0x07ff
-			}
-		}
-		else // ch > 1
-		{
-			//in this way, 0v ->0, 5V -> 2047, 10V->4095
-			if (w1 & 1 << 12)
-			{
-				//input value is less than 5V, ADC code from 0x1000 to 0x1fff
-				w1 = (w1 & 0x0fff) >> 1;
-				//output value now is from 0x0000 to 0x07ff
-			}
-			else
-			{
-				//since output data : 3 channel id bits + sign bit + 12 conversion result
-				//input value is bigger than 5v, 12 ADC code from 0x0000 to 0x0fff
-				w1 = (w1 | 0x1000) >> 1;
-				//remove the 3 channel id bits
-				w1 = w1 & 0x0fff;
-				//output value is now 0x0800 to 0x0fff
-			}
-		}
-		return w1;
+		// Extend the 13th bit to all 16 bits.
+		if (w1 & 0x1000)
+			w1 |= 0xF000;
+		else
+			w1 &= 0x0FFF;
+
+		// w1 should now be in the range (-4096,+4095), 12 bits + sign.
+		w1 += 4096;
+		// w1 should now be in the range (0,+8191), 13 bits unsigned.
+
+		return (uint16_t)w1;
 	}
 	else
 		return 0;
@@ -369,7 +344,7 @@ void analogWrite(uint8_t ch, int16_t value)
 {
 	//AD5754 16 bit DAC, it also works for AD5724 12 bit DAC
 	//chanel number should from 0 to 3 and value ranges from -32767 to 32767
-	if (!((ch & ~3) || ((value > 32767) || (value < -32767))))
+	if (!(ch & ~3 || value > 32767 || value < -32767))
 	{
 		/* DAC register*/
 		PORTD.OUTCLR = PIN4_bm;        // SPI SS = L

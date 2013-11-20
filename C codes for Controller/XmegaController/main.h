@@ -31,7 +31,7 @@ void handle_message_length_52(uint8_t *msg_buffer);
 
 
 //routines for updating display, computing new pattern indices
-void update_display(void);
+void update_display_for_rates(void);
 void increment_index_x(void);
 void increment_index_y(void);
 void decrement_index_x(void);
@@ -39,8 +39,8 @@ void decrement_index_y(void);
 void fetch_and_display_frame(FIL *pFile, uint16_t f_num, uint16_t, uint16_t);
 void display_preload_frame(uint16_t f_num, uint16_t, uint16_t);
 void update_ANOUT(void);
-void update_position_x(void);
-void update_position_y(void);
+void update_display_for_position_x(void);
+void update_display_for_position_y(void);
 
 //helper utilities
 void toggle_trigger(void);

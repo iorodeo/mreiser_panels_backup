@@ -80,16 +80,17 @@
 #define MSG_3_SET_FUNCY_FREQ           0x30
 #define MSG_3_SET_MAX_VOLTAGE          0x35
 #define MSG_3_SET_VOLTAGE_RANGE_ADC    0x62
-#define MSG_3_SET_MODE_POS_CUSTOM_X    0x63
-#define MSG_3_SET_MODE_POS_CUSTOM_Y    0x64
-#define MSG_3_SET_MODE_VEL_CUSTOM_X    0x65
-#define MSG_3_SET_MODE_VEL_CUSTOM_Y    0x66
 
 #define MSG_4_SET_AO_POS              0x10
 #define MSG_4_SET_AO_NEG              0x11
 
 #define MSG_5_SET_POSITION            0x70
 #define MSG_5_SEND_GAIN_BIAS          0x71
+
+#define MSG_7_SET_MODE_POS_CUSTOM_X    0x63
+#define MSG_7_SET_MODE_POS_CUSTOM_Y    0x64
+#define MSG_7_SET_MODE_VEL_CUSTOM_X    0x65
+#define MSG_7_SET_MODE_VEL_CUSTOM_Y    0x66
 
 
 // Define mode numbers.
@@ -111,6 +112,7 @@ void handle_message_length_2(uint8_t *msg_buffer);
 void handle_message_length_3(uint8_t *msg_buffer);
 void handle_message_length_4(uint8_t *msg_buffer);
 void handle_message_length_5(uint8_t *msg_buffer);
+void handle_message_length_7(uint8_t *msg_buffer);
 void handle_message_length_62(uint8_t *msg_buffer);
 void handle_message_length_63(uint8_t *msg_buffer);
 void handle_message_length_52(uint8_t *msg_buffer);

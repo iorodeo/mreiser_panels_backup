@@ -909,12 +909,12 @@ void handle_message_length_9(uint8_t *msg_buffer) {
 
         case 0x01:
             //'send_gain_bias', all of these are signed byte values
-            gain_x = (uint16_t) msg_buffer[1] + (256*msg_buffer[2]);
-            bias_x = (uint16_t) msg_buffer[3] + (256*msg_buffer[4]);
-            gain_y = (uint16_t) msg_buffer[5] + (256*msg_buffer[6]);
-            bias_y = (uint16_t) msg_buffer[7] + (256*msg_buffer[8]);
-			if (quiet_mode_on == 0)
-                xprintf(PSTR("set_gain_bias: gain_x= %d,  bias_x= %d, gain_y= %d, bias_y=%d\n"), gain_x, bias_x, gain_y, bias_y);
+            g_gain_x = (uint16_t) msg_buffer[1] + (256*msg_buffer[2]);
+            g_bias_x = (uint16_t) msg_buffer[3] + (256*msg_buffer[4]);
+            g_gain_y = (uint16_t) msg_buffer[5] + (256*msg_buffer[6]);
+            g_bias_y = (uint16_t) msg_buffer[7] + (256*msg_buffer[8]);
+			if (!g_b_quiet_mode)
+                xprintf(PSTR("set_gain_bias: gain_x= %d,  bias_x= %d, gain_y= %d, bias_y=%d\n"), g_gain_x, g_bias_x, g_gain_y, g_bias_y);
             break;
 		
 		default:
@@ -1000,11 +1000,11 @@ void display_dumped_frame (uint8_t *msg_buffer)
 } // display_dumped_frame()
 
 
-void display_preload_frame(uint16_t f_num, uint16_t Xindex, uint16_t Yindex){
+void display_preload_frame(uint16_t index_frame, uint16_t Xindex, uint16_t Yindex){
     // this function will fetch the current frame from the SD-card and display it.
-    // pass in f_num instead of using global frame_num to ensure that the value of
-    // frame_num does not change during this function's run
-    // suppose f_num is from 0 to (n_num * y_num - 1)
+    // pass in f_num instead of using global g_index_frame to ensure that the value of
+    // g_index_frame does not change during this function's run
+    // suppose f_num is from 0 to (n_num * g_y_max - 1)
     uint16_t X_dac_val, Y_dac_val;
 	uint8_t CMD[2];
 
@@ -1013,15 +1013,15 @@ void display_preload_frame(uint16_t f_num, uint16_t Xindex, uint16_t Yindex){
 	//main funciton. In this way, we can keep update frame during f_read to in order to update function data 
 	digitalWrite(1, HIGH); 
 	//ask all panels to load f_num
-	CMD[0] = *((uint8_t *)&f_num + 1) | 0xf0;  // this is the high byte
-	CMD[1] = *(uint8_t *)&f_num; //this is the low byte
+	CMD[0] = *((uint8_t *)&index_frame + 1) | 0xf0;  // this is the high byte
+	CMD[1] = *(uint8_t *)&index_frame; //this is the low byte
 		
 	i2cMasterSend(0, 2, CMD); 	//use 2 to follow the old protocol temporarily
 		
 	//update analog output after updating frames 		
-	X_dac_val = ((uint32_t)Xindex + 1)*32767/x_num; 
+	X_dac_val = ((uint32_t)Xindex + 1)*32767/g_x_max;
 	analogWrite(0, X_dac_val); // make it a value in the range 0 - 32767 (0 - 10V)
-	Y_dac_val = ((uint32_t)Yindex + 1)*32767/y_num; 
+	Y_dac_val = ((uint32_t)Yindex + 1)*32767/g_y_max;
 	analogWrite(1, Y_dac_val); // make it a value in the range 0 - 32767 (0 - 10V)
 	digitalWrite(1, LOW); // set line low at end of frame write	
 }
@@ -1077,7 +1077,7 @@ void fetch_and_display_frame(FIL *pFile, uint16_t index_frame, uint16_t Xindex, 
             
             for (panel_index=1; panel_index <= g_num_panels; panel_index++)
             {
-                for(j = 0;j < bytes_per_panel_frame;j++){
+                for(j = 0;j < g_bytes_per_panel;j++){
                     FLASH[j] = frameBuff[buff_index++]; //not good for performance, no need to copy the data
                 }
 
@@ -1445,6 +1445,7 @@ void loadPattern2Panels(uint8_t pat_num) {
 	uint8_t CMD[34];
 	uint16_t f_num;
 	uint16_t bytes_per_panel_patten;
+    uint8_t        grayscale;
 				
     
     if (pat_num < 10)
@@ -1454,44 +1455,44 @@ void loadPattern2Panels(uint8_t pat_num) {
     else if (pat_num < 1000)
         sprintf(str, "pat0%d.pat\0", pat_num);
     else
-        if (quiet_mode_on == 0)
+        if (!g_b_quiet_mode)
             xputs(PSTR("pat_num is too big.\n"));
     
-    res = f_open(&file1, str, FA_OPEN_EXISTING | FA_READ);
+    res = f_open(&g_file_pattern, str, FA_OPEN_EXISTING | FA_READ);
     if (res == FR_OK) {
-        res = f_read(&file1, pattDataBuff, 512, &cnt); // read the 10 byte test header info block
+        res = f_read(&g_file_pattern, pattDataBuff, 512, &cnt); // read the 10 byte test header info block
         if ((res == FR_OK) && (cnt == 512)) {
 
             // get the test header info
-            ((uint8_t*)&x_num)[0] = pattDataBuff[0];
-            ((uint8_t*)&x_num)[1] = pattDataBuff[1];
-            ((uint8_t*)&y_num)[0] = pattDataBuff[2];
-            ((uint8_t*)&y_num)[1] = pattDataBuff[3];
-            num_panels = pattDataBuff[4];
-            gs_value = pattDataBuff[5];   //11, 12, 13, or 14 means use row compression
+            ((uint8_t*)&g_x_max)[0] = pattDataBuff[0];
+            ((uint8_t*)&g_x_max)[1] = pattDataBuff[1];
+            ((uint8_t*)&g_y_max)[0] = pattDataBuff[2];
+            ((uint8_t*)&g_y_max)[1] = pattDataBuff[3];
+            g_num_panels = pattDataBuff[4];
+            grayscale = pattDataBuff[5];   //11, 12, 13, or 14 means use row compression
             
             
-            num_frames = x_num * y_num;
-            if ((gs_value >= 11) & (gs_value <= 14)) {
-                gs_value = gs_value - 10;
-                row_compress = 1;
-                bytes_per_panel_frame = gs_value;
+            num_frames = g_x_max * g_y_max;
+            if ((grayscale >= 11) & (grayscale <= 14)) {
+                grayscale = grayscale - 10;
+                g_row_compress = 1;
+                g_bytes_per_panel = grayscale;
             }
             else {
-                row_compress = 0;
-                bytes_per_panel_frame = gs_value * 8;
+                g_row_compress = 0;
+                g_bytes_per_panel = grayscale * 8;
             }
-            index_x = index_y = 0;
-            frame_num = 0;
-            Stop = 1;
-            display_flag = 0;  //clear the display flag
-			bytes_per_panel_patten = num_frames*bytes_per_panel_frame;
-            if (quiet_mode_on == 0){
+            g_x = g_y = 0;
+            g_index_frame = 0;
+            g_b_running = FALSE;
+            g_display_count = 0;  //clear the display flag
+			bytes_per_panel_patten = num_frames*g_bytes_per_panel;
+            if (!g_b_quiet_mode){
                 xprintf(PSTR("preload pattern %u:\n"), pat_num);
-                xprintf(PSTR("  x_num = %u\n  y_num = %u\n  num_panels = %u\n  gs_value = %u\n row_compression = %u\n"),
-                        x_num, y_num, num_panels, gs_value, row_compress);
-				xprintf(PSTR("  bytes_per_panel_frame = %u\n  bytes_per_panel_pattern = %u\n"),
-                        bytes_per_panel_frame, bytes_per_panel_patten);
+                xprintf(PSTR("  g_x_max = %u\n  g_y_max = %u\n  num_panels = %u\n  grayscale = %u\n g_row_compression = %u\n"),
+                        g_x_max, g_y_max, g_num_panels, grayscale, g_row_compress);
+				xprintf(PSTR("  g_bytes_per_panel = %u\n  bytes_per_panel_pattern = %u\n"),
+                        g_bytes_per_panel, bytes_per_panel_patten);
             }
 			
 			//since panel has only 800 byte for the pattern per panel, we need to check before tranfer
@@ -1499,34 +1500,34 @@ void loadPattern2Panels(uint8_t pat_num) {
 			{
 				for(f_num = 0; f_num < num_frames; ++f_num)
 				{
-					len = num_panels * bytes_per_panel_frame;
+					len = g_num_panels * g_bytes_per_panel;
 					block_per_frame = len/512 + 1;
 					uint8_t  frameBuff[len];
 					offset = 512 + (uint32_t)f_num * 512 * block_per_frame;
 					//xprintf(PSTR("offset %lu, f_num %u\n"), offset, f_num);
-					res = f_lseek(&file1, offset);
-					if ((res == FR_OK) && (file1.fptr == offset)) {
-						res = f_read(&file1, frameBuff, len, &cnt);
+					res = f_lseek(&g_file_pattern, offset);
+					if ((res == FR_OK) && (g_file_pattern.fptr == offset)) {
+						res = f_read(&g_file_pattern, frameBuff, len, &cnt);
 						if ((res == FR_OK) && (cnt == len)) {							
 						
 							buff_index = 0;
 							
-							CMD[bytes_per_panel_frame] = *(uint8_t *)&f_num;
-							CMD[bytes_per_panel_frame+1] = *((uint8_t *)&f_num + 1);	
+							CMD[g_bytes_per_panel] = *(uint8_t *)&f_num;
+							CMD[g_bytes_per_panel+1] = *((uint8_t *)&f_num + 1);
 								
-							for (panel_index = 1; panel_index <= num_panels; panel_index++){
+							for (panel_index = 1; panel_index <= g_num_panels; panel_index++){
 								//FLASH = &frameBuff[buff_index];
 
-								for(j=0;j<bytes_per_panel_frame;++j)
+								for(j=0;j<g_bytes_per_panel;++j)
 								{
 									CMD[j] = frameBuff[buff_index + j];									
 								}
 					
 								
-								if (row_compress == 0)
-									i2cMasterSend(panel_index, bytes_per_panel_frame+2, CMD);
+								if (g_row_compress == 0)
+									i2cMasterSend(panel_index, g_bytes_per_panel+2, CMD);
 								else{
-									switch(gs_value) {
+									switch(grayscale) {
 									case 1: //the data format is [5, data, f_num_LB, f_num_HB , x, x]
 										i2cMasterSend(panel_index, 5, CMD);
 										break;
@@ -1541,13 +1542,13 @@ void loadPattern2Panels(uint8_t pat_num) {
 									}
 								}
 								
-								buff_index += bytes_per_panel_frame;
+								buff_index += g_bytes_per_panel;
 
 							} //end of for all panels loop
-						//xprintf(PSTR("f_num_LB %u, f_num_HB %u\n"), CMD[bytes_per_panel_frame], CMD[bytes_per_panel_frame+1]);		
+						//xprintf(PSTR("f_num_LB %u, f_num_HB %u\n"), CMD[g_bytes_per_panel], CMD[g_bytes_per_panel+1]);
 						}
 						else {
-							if (quiet_mode_on == 0){
+							if (!g_b_quiet_mode){
 								xputs(PSTR("Error in f_read in loadPattern2Panels!\n"));
 								xprintf(PSTR("RES = %u, f_num= %u, cnt= %u\n"), res, f_num, cnt);
 								return;
@@ -1555,7 +1556,7 @@ void loadPattern2Panels(uint8_t pat_num) {
 						}
 					} else {
 						
-						if (quiet_mode_on == 0){
+						if (!g_b_quiet_mode){
 							xputs(PSTR("Error in f_lseek in loadPattern2Panels!\n"));
 							xprintf(PSTR("RES = %u, f_num= %u, offset = %lu\n"), res, f_num, offset);
 							return;
@@ -1573,17 +1574,17 @@ void loadPattern2Panels(uint8_t pat_num) {
 			}
 			
         } else {
-            if (quiet_mode_on == 0)
+            if (!g_b_quiet_mode)
                 xputs(PSTR("Error reading in pattern file\n"));
 			return;
         }
     } else {
-        if (quiet_mode_on == 0)
+        if (!g_b_quiet_mode)
             xputs(PSTR("Error opening pattern file\n"));
 			return;
     }
 	
-	res = f_close(&file1);
+	res = f_close(&g_file_pattern);
 	usePreloadedPattern = 1;
 	xprintf(PSTR("Successfully load pattern %u to the panels\n"), pat_num);
 	
@@ -1716,9 +1717,9 @@ void benchmark_pattern(void)
     bench_time = timer_coarse_toc();
     frame_rate = ((uint32_t)num_frames*1000)/bench_time;
     xprintf(PSTR(" bench_time = %lu ms, frame_rate = %u\n"), bench_time, frame_rate);
-	//reset index_x and index_y
-	index_x=0;
-	index_y=0;
+	//reset index_x and g_y
+	g_x=0;
+	g_y=0;
 } // benchmark_pattern()
 
 

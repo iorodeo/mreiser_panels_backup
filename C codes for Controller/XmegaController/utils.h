@@ -140,6 +140,7 @@ typedef struct ihexrec {
 
 /* Function prototypes */
 void     CCPWrite( volatile uint8_t * address, uint8_t value );
+void     ledShow4Bits (uint8_t byte);
 void     ledWrite( uint8_t led, uint8_t value );
 void     ledToggle( uint8_t led );
 void     ledBlink(void);

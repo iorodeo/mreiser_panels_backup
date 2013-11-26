@@ -58,8 +58,10 @@ uint16_t          g_x_max = 1,                         g_y_max = 1;             
 volatile uint16_t g_x = 0,                             g_y = 0;                             // Current index of x and y
 int16_t           g_x_initial = 0,                     g_y_initial = 0;                     // Initial position set by the user.
 
+uint16_t          g_xrate_max = 100,                   g_yrate_max = 100;                   // Framerates for fullscale ADC with a custom mode coefficient of 1.0
+
 uint8_t           g_mode_x = MODE_VEL_OPENLOOP,        g_mode_y = MODE_VEL_OPENLOOP;
-int16_t           g_custom_a_x[6] = {0,0,0,0,0,0},     g_custom_a_y[6] = {0,0,0,0,0,0};       // Coefficients for custom modes.  Divided by 10, so that a=10 is a multiplier of 1.0
+int16_t           g_custom_a_x[6] = {0,0,0,0,0,0},     g_custom_a_y[6] = {0,0,0,0,0,0};     // Coefficients for custom modes.  Divided by 10, so that a=10 is a multiplier of 1.0
 
 
 uint32_t          g_nbytes_func_x = RINGBUFFER_LENGTH, g_nbytes_func_y = RINGBUFFER_LENGTH; //function file size
@@ -1225,6 +1227,7 @@ void set_isr_rates(int16_t xRate, int16_t yRate)
 //
 void update_display_for_rates(void)
 {
+	int8_t         i;
     int16_t        xRate = 0;
     int16_t        yRate = 0;
     int16_t        src;
@@ -1232,8 +1235,8 @@ void update_display_for_rates(void)
     static int32_t srcy_filtered=0;
     int32_t        srcx_filtered_prev;
     int32_t        srcy_filtered_prev;
-    int16_t        adc0, adc1, adc2, adc3;
-    int16_t        adc;
+    int32_t        adc[4]={0,0,0,0};
+    int32_t        adc_rate;
 
     // There are eight modes:
     // 0 - Open loop:                                    xRate=mx*fx(t) + bx;          yRate=my*fy(t) + by;
@@ -1268,9 +1271,6 @@ void update_display_for_rates(void)
             break;
 
         case MODE_POS_ADC:
-            adc = analogRead(2);
-            g_x = (uint32_t)adc * (uint32_t)g_x_max / (uint32_t)g_x_adc_max; // Change the scale from (0,adcmax) to (0,xmax).
-            g_index_frame = FRAMEFROMXY(g_x, g_y);
         	xRate = 0;
             break;
 
@@ -1283,17 +1283,26 @@ void update_display_for_rates(void)
             break;
 
         case MODE_VEL_CUSTOM: // Custom velocity mode.
-        	adc0  = analogRead(0);
-        	adc1  = analogRead(1);
-        	adc2  = analogRead(2);
-        	adc3  = analogRead(3);
-        	xRate = (int16_t)((int32_t)g_gain_x*((int32_t)g_custom_a_x[0]*(int32_t)adc0/10
-                                               + (int32_t)g_custom_a_x[1]*(int32_t)adc1/10
-                                               + (int32_t)g_custom_a_x[2]*(int32_t)adc2/10
-                                               + (int32_t)g_custom_a_x[3]*(int32_t)adc3/10
-                                               + (int32_t)g_custom_a_x[4]*(int32_t)g_buf_func_x[g_index_func_x_read]/10
-                                               + (int32_t)g_custom_a_x[5]*(int32_t)g_buf_func_y[g_index_func_y_read]/10)/10
-                                               + 5*(int32_t)g_bias_x/2);
+        	// Read the ADC's if necessary.
+        	for (i=0; i<4; i++)
+        		if (g_custom_a_x[i])
+        			adc[i] = (int32_t)analogRead(0);
+        		else
+        			adc[i] = 0;
+
+        	// Put zero vel in the center of the adc range, and combine the adc's according to coefficients.
+        	adc_rate = (int32_t)g_custom_a_x[0] * (adc[0] - (int32_t)g_x_adc_max/2) / 10 +
+                       (int32_t)g_custom_a_x[1] * (adc[1] - (int32_t)g_x_adc_max/2) / 10 +
+                       (int32_t)g_custom_a_x[2] * (adc[2] - (int32_t)g_x_adc_max/2) / 10 +
+                       (int32_t)g_custom_a_x[3] * (adc[3] - (int32_t)g_x_adc_max/2) / 10;
+
+        	// Change the scale from (-adcmax/2,+adcmax/2) to (-xratemax,xratemax).
+            xRate = (int32_t)adc_rate * (int32_t)g_xrate_max / (int32_t)g_x_adc_max;
+
+            // Add the functions.
+            xRate += (int32_t)g_custom_a_x[4] * (int32_t)g_buf_func_x[g_index_func_x_read] / 10;
+            xRate += (int32_t)g_custom_a_x[5] * (int32_t)g_buf_func_y[g_index_func_y_read] / 10;
+            break;
 
         case MODE_POS_CUSTOM: // Custom position mode.
         	xRate = 0;
@@ -1325,9 +1334,6 @@ void update_display_for_rates(void)
             break;
 
         case MODE_POS_ADC:
-            adc = analogRead(3);
-            g_y = (uint32_t)adc * (uint32_t)g_y_max / (uint32_t)g_y_adc_max; // Change the scale from (0,adcmax) to (0,ymax).
-            g_index_frame = FRAMEFROMXY(g_x, g_y);
         	yRate = 0;
             break;
 
@@ -1340,17 +1346,26 @@ void update_display_for_rates(void)
             break;
 
         case MODE_VEL_CUSTOM: // Custom velocity mode.
-        	adc0  = analogRead(0);
-        	adc1  = analogRead(1);
-        	adc2  = analogRead(2);
-        	adc3  = analogRead(3);
-        	yRate = (int16_t)((int32_t)g_gain_y*((int32_t)g_custom_a_y[0]*(int32_t)adc0/10
-                                               + (int32_t)g_custom_a_y[1]*(int32_t)adc1/10
-                      	                       + (int32_t)g_custom_a_y[2]*(int32_t)adc2/10
-   	                                           + (int32_t)g_custom_a_y[3]*(int32_t)adc3/10
-   	                                           + (int32_t)g_custom_a_y[4]*(int32_t)g_buf_func_x[g_index_func_x_read]/10
-   	                                           + (int32_t)g_custom_a_y[5]*(int32_t)g_buf_func_y[g_index_func_y_read]/10)/10
-   	                                           + 5*(int32_t)g_bias_y/2);
+        	// Read the ADC's if necessary.
+        	for (i=0; i<4; i++)
+        		if (g_custom_a_x[i])
+        			adc[i] = (int32_t)analogRead(0);
+        		else
+        			adc[i] = 0;
+
+        	// Put zero vel in the center of the adc range, and combine the adc's according to coefficients.
+        	adc_rate = (int32_t)g_custom_a_y[0] * (adc[0] - (int32_t)g_y_adc_max/2) / 10 +
+                       (int32_t)g_custom_a_y[1] * (adc[1] - (int32_t)g_y_adc_max/2) / 10 +
+                       (int32_t)g_custom_a_y[2] * (adc[2] - (int32_t)g_y_adc_max/2) / 10 +
+                       (int32_t)g_custom_a_y[3] * (adc[3] - (int32_t)g_y_adc_max/2) / 10;
+
+        	// Change the scale from (-adcmax/2,+adcmax/2) to (-yratemax,yratemax).
+            yRate = (int32_t)adc_rate * (int32_t)g_yrate_max / (int32_t)g_y_adc_max;
+
+            // Add the functions.
+            yRate += (int32_t)g_custom_a_y[4] * (int32_t)g_buf_func_x[g_index_func_x_read] / 10;
+            yRate += (int32_t)g_custom_a_y[5] * (int32_t)g_buf_func_y[g_index_func_y_read] / 10;
+        	break;
 
         case MODE_POS_CUSTOM: // Custom position mode.
         	yRate = 0;
@@ -2144,6 +2159,9 @@ void update_display_for_position_x(void)
         switch(g_mode_x)
         {
             case MODE_POS_ADC:
+                adc[2] = analogRead(2);
+                g_x = (uint32_t)adc[2] * (uint32_t)g_x_max / (uint32_t)g_x_adc_max; // Change the scale from (0,adcmax) to (0,xmax).
+                g_index_frame = FRAMEFROMXY(g_x, g_y);
                 break;
 
             case MODE_POS_FUNCTION:
@@ -2221,6 +2239,9 @@ void update_display_for_position_y(void)
         switch(g_mode_y)
         {
             case MODE_POS_ADC:
+                adc[3] = analogRead(3);
+                g_y = (uint32_t)adc[3] * (uint32_t)g_y_max / (uint32_t)g_y_adc_max; // Change the scale from (0,adcmax) to (0,ymax).
+                g_index_frame = FRAMEFROMXY(g_x, g_y);
                 break;
 
             case MODE_POS_FUNCTION:

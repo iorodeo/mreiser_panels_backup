@@ -25,7 +25,7 @@
 #define ISR_INCREMENT_FUNC_X	4
 #define ISR_INCREMENT_FUNC_Y	5
 
-#define FRAMEFROMXY(x,y)    ((y)*g_x_max + (x))
+#define FRAMEFROMXY(x,y)    ((y)*g_n_x + (x))
 #define MIN(x,y)            ((x)<(y)?(x):(y))
 #define MAX(x,y)            ((x)>(y)?(x):(y))
 #define CLIP(x,lo,hi)       MAX((lo),MIN((x),(hi)))
@@ -47,14 +47,14 @@ uint8_t           g_row_compress = FALSE;
 uint8_t           g_ident_compress = FALSE;
 uint8_t           g_num_panels = 0;
 volatile uint16_t g_index_frame = 0;
-uint16_t          g_index_frame_max = 0;
+uint16_t          g_n_frames = 0;                                                           // Number of frames.  Max index is (g_n_frames - 1).
 volatile uint8_t  sync_XY_func = 0;
 uint8_t           usePreloadedPattern = FALSE;
 
 
 uint16_t          g_x_adc_max = DAQRESOLUTION,         g_y_adc_max = DAQRESOLUTION;         // 12 bit signed ADC, so really 13 bits.
 
-uint16_t          g_x_max = 1,                         g_y_max = 1;                         // Max index for x and y
+uint16_t          g_n_x = 1,                           g_n_y = 1;                           // Number of x and y 0-based positions.  Max index for x is (g_n_x - 1), similar for y.
 volatile uint16_t g_x = 0,                             g_y = 0;                             // Current index of x and y
 int16_t           g_x_initial = 0,                     g_y_initial = 0;                     // Initial position set by the user.
 
@@ -997,7 +997,7 @@ void display_preload_frame(uint16_t index_frame, uint16_t Xindex, uint16_t Yinde
     // this function will fetch the current frame from the SD-card and display it.
     // pass in f_num instead of using global g_index_frame to ensure that the value of
     // g_index_frame does not change during this function's run
-    // suppose f_num is from 0 to (n_num * g_y_max - 1)
+    // suppose f_num is from 0 to (n_num * g_n_y - 1)
     uint16_t X_dac_val, Y_dac_val;
 	uint8_t CMD[2];
 
@@ -1012,9 +1012,9 @@ void display_preload_frame(uint16_t index_frame, uint16_t Xindex, uint16_t Yinde
 	i2cMasterSend(0, 2, CMD); 	//use 2 to follow the old protocol temporarily
 		
 	//update analog output after updating frames 		
-	X_dac_val = ((uint32_t)Xindex + 1)*32767/g_x_max;
+	X_dac_val = ((uint32_t)Xindex + 1)*32767/g_n_x;
 	analogWrite(0, X_dac_val); // make it a value in the range 0 - 32767 (0 - 10V)
-	Y_dac_val = ((uint32_t)Yindex + 1)*32767/g_y_max;
+	Y_dac_val = ((uint32_t)Yindex + 1)*32767/g_n_y;
 	analogWrite(1, Y_dac_val); // make it a value in the range 0 - 32767 (0 - 10V)
 	digitalWrite(1, LOW); // set line low at end of frame write	
 }
@@ -1024,7 +1024,7 @@ void display_preload_frame(uint16_t index_frame, uint16_t Xindex, uint16_t Yinde
 //   Fetch the current frame from the SD-card and display it.
 //   pass in index_frame instead of using global g_index_frame to ensure that the value of
 //   g_index_frame does not change during this function's run
-//   suppose index_frame is from 0 to (n_num * g_y_max - 1)
+//   suppose index_frame is from 0 to (n_num * g_n_y - 1)
 //
 void fetch_and_display_frame(FIL *pFile, uint16_t index_frame, uint16_t Xindex, uint16_t Yindex)
 {
@@ -1044,7 +1044,7 @@ void fetch_and_display_frame(FIL *pFile, uint16_t index_frame, uint16_t Xindex, 
     uint8_t   arrayIndex;
     
 
-    if (index_frame <= g_index_frame_max)
+    if (index_frame < g_n_frames)
     {
 		digitalWrite(DIO_FRAMEBUSY, HIGH); // Set line high at start of frame write
 		//if count gets bigger than 1 -> frame skipped
@@ -1165,12 +1165,12 @@ void fetch_and_display_frame(FIL *pFile, uint16_t index_frame, uint16_t Xindex, 
 		// Update analog outs
 		if (g_mode_x != MODE_POS_DEBUG)
 		{
-			dac_x = ((uint32_t)Xindex + 1)*32767/g_x_max;
+			dac_x = ((uint32_t)Xindex + 1)*32767/g_n_x;
 			analogWrite(0, dac_x); // make it a value in the range 0 - 32767 (0 - 10V)
 		}
 		if (g_mode_y != MODE_POS_DEBUG)
 		{
-			dac_y = ((uint32_t)Yindex + 1)*32767/g_y_max;
+			dac_y = ((uint32_t)Yindex + 1)*32767/g_n_y;
 			analogWrite(1, dac_y); // make it a value in the range 0 - 32767 (0 - 10V)
 		}
 
@@ -1375,7 +1375,7 @@ void increment_index_x(void)
 {
     
     g_x++;
-    g_x %= g_x_max;
+    g_x %= g_n_x;
     
     g_index_frame = FRAMEFROMXY(g_x, g_y);
     
@@ -1387,7 +1387,7 @@ void increment_index_x(void)
 void increment_index_y(void)
 {
     g_y++;
-    g_y %= g_y_max;
+    g_y %= g_n_y;
     
     g_index_frame = FRAMEFROMXY(g_x, g_y);
     
@@ -1400,7 +1400,7 @@ void decrement_index_x(void)
 {
     
     if (g_x <= 0)    //just to be safe, use less than
-        g_x = g_x_max - 1;    //but these are unsigned
+        g_x = g_n_x - 1;    //but these are unsigned
     else
         g_x--;
     
@@ -1413,7 +1413,7 @@ void decrement_index_x(void)
 void decrement_index_y(void)
 {
     if (g_y <= 0)    //just to be safe, use less than
-        g_y = g_y_max - 1;    //but these are unsigned
+        g_y = g_n_y - 1;    //but these are unsigned
     else
         g_y--;
     
@@ -1454,14 +1454,14 @@ void set_pattern(uint8_t pat_num)
         if ((res == FR_OK) && (nbytes_read == NBYTES_HEADER))
         {
             // get the header info
-            ((uint8_t*)&g_x_max)[0] = bufHeader[0];
-            ((uint8_t*)&g_x_max)[1] = bufHeader[1];
-            ((uint8_t*)&g_y_max)[0] = bufHeader[2];
-            ((uint8_t*)&g_y_max)[1] = bufHeader[3];
+            ((uint8_t*)&g_n_x)[0] = bufHeader[0];
+            ((uint8_t*)&g_n_x)[1] = bufHeader[1];
+            ((uint8_t*)&g_n_y)[0] = bufHeader[2];
+            ((uint8_t*)&g_n_y)[1] = bufHeader[3];
             g_num_panels = bufHeader[4];
             grayscale = bufHeader[5];   //11, 12, 13, or 14 means use row compression
-            
-            g_index_frame_max = FRAMEFROMXY(g_x_max, g_y_max);
+            ledShow4Bits(g_n_x>>4);
+            g_n_frames = g_n_x * g_n_y;
             if ((grayscale >= 11) & (grayscale <= 14))
             {
             	grayscale = grayscale - 10;
@@ -1480,8 +1480,8 @@ void set_pattern(uint8_t pat_num)
             if (!g_b_quiet_mode)
             {
                 xprintf(PSTR("Setting pattern %u:\n"), pat_num);
-                xprintf(PSTR("  g_x_max = %u\n  g_y_max = %u\n  g_num_panels = %u\n  grayscale = %u\n row_compression = %u\n"),
-                        g_x_max, g_y_max, g_num_panels, grayscale, g_row_compress);
+                xprintf(PSTR("  g_n_x = %u\n  g_n_y = %u\n  g_num_panels = %u\n  grayscale = %u\n row_compression = %u\n"),
+                        g_n_x, g_n_y, g_num_panels, grayscale, g_row_compress);
             }
             fetch_and_display_frame(&g_file_pattern, g_index_frame, g_x, g_y);
         }
@@ -1547,11 +1547,11 @@ void benchmark_pattern(void)
     
     timer_coarse_tic();
     
-    for(frame_ind = 0; frame_ind < g_index_frame_max; frame_ind++)
+    for(frame_ind = 0; frame_ind < g_n_frames; frame_ind++)
         fetch_and_display_frame(&g_file_pattern, frame_ind, g_x, g_y);
     
     bench_time = timer_coarse_toc();
-    frame_rate = ((uint32_t)g_index_frame_max*1000)/bench_time;
+    frame_rate = ((uint32_t)g_n_frames*1000)/bench_time;
     xprintf(PSTR(" bench_time = %lu ms, frame_rate = %u\n"), bench_time, frame_rate);
 	//reset index_x and g_y
 	g_x=0;
@@ -1971,7 +1971,7 @@ void update_display_for_position_x(void)
         {
             case MODE_POS_ADC:
                 adc[2] = analogRead(2);
-                g_x = (uint32_t)adc[2] * (uint32_t)g_x_max / (uint32_t)g_x_adc_max; // Change the scale from (0,adcmax) to (0,xmax).
+                g_x = (uint32_t)adc[2] * (uint32_t)g_n_x / (uint32_t)g_x_adc_max; // Change the scale from (0,adcmax) to (0,xmax).
                 g_index_frame = FRAMEFROMXY(g_x, g_y);
                 break;
 
@@ -1980,9 +1980,9 @@ void update_display_for_position_x(void)
 
                 // Wrap around if necessary.
                 if (x_tmp >= 0)
-                    g_x = x_tmp%g_x_max;
+                    g_x = x_tmp%g_n_x;
                 else
-                    g_x = g_x_max - ((abs(x_tmp))%g_x_max) - 1;
+                    g_x = g_n_x - ((abs(x_tmp))%g_n_x) - 1;
 
                 g_index_frame = FRAMEFROMXY(g_x, g_y);
                 break;
@@ -2007,14 +2007,14 @@ void update_display_for_position_x(void)
    	                    (int32_t)g_custom_a_x[3] * (adc[3] - (int32_t)g_x_adc_max/2) / 10;
 
             	 // Change the scale from (-adcmax/2,+adcmax/2) to (0,xmax).
-                x = (((int32_t)adc_x * (int32_t)g_x_max / (int32_t)g_x_adc_max) + (int32_t)g_x_max);
+                x = (((int32_t)adc_x * (int32_t)g_n_x / (int32_t)g_x_adc_max) + (int32_t)g_n_x);
 
                 // Add the functions.
                 x += (int32_t)g_custom_a_x[4] * (int32_t)g_buf_func_x[g_index_func_x_read] / 10;
                 x += (int32_t)g_custom_a_x[5] * (int32_t)g_buf_func_y[g_index_func_y_read] / 10;
 
                 // Output.
-                g_x = (uint16_t)((x % (int32_t)g_x_max) & 0xFFFF);
+                g_x = (uint16_t)((x % (int32_t)g_n_x) & 0xFFFF);
                 g_index_frame = FRAMEFROMXY(g_x, g_y);
             	break;
 
@@ -2051,7 +2051,7 @@ void update_display_for_position_y(void)
         {
             case MODE_POS_ADC:
                 adc[3] = analogRead(3);
-                g_y = (uint32_t)adc[3] * (uint32_t)g_y_max / (uint32_t)g_y_adc_max; // Change the scale from (0,adcmax) to (0,ymax).
+                g_y = (uint32_t)adc[3] * (uint32_t)g_n_y / (uint32_t)g_y_adc_max; // Change the scale from (0,adcmax) to (0,ymax).
                 g_index_frame = FRAMEFROMXY(g_x, g_y);
                 break;
 
@@ -2060,9 +2060,9 @@ void update_display_for_position_y(void)
 
                 // Wrap around if necessary.
                 if (y_tmp >= 0)
-                    g_y = y_tmp%g_y_max;
+                    g_y = y_tmp%g_n_y;
                 else
-                	g_y = g_y_max - ((abs(y_tmp))%g_y_max) - 1;
+                	g_y = g_n_y - ((abs(y_tmp))%g_n_y) - 1;
 
                 g_index_frame = FRAMEFROMXY(g_x, g_y);
                 break;
@@ -2087,14 +2087,14 @@ void update_display_for_position_y(void)
    	                    (int32_t)g_custom_a_y[3] * (adc[3] - (int32_t)g_y_adc_max/2) / 10;
 
             	 // Change the scale from (-adcmax/2,+adcmax/2) to (0,ymax).
-                y = (((int32_t)adc_y * (int32_t)g_y_max / (int32_t)g_y_adc_max) + (int32_t)g_y_max);
+                y = (((int32_t)adc_y * (int32_t)g_n_y / (int32_t)g_y_adc_max) + (int32_t)g_n_y);
 
                 // Add the functions.
                 y += (int32_t)g_custom_a_y[4] * (int32_t)g_buf_func_x[g_index_func_x_read] / 10;
                 y += (int32_t)g_custom_a_y[5] * (int32_t)g_buf_func_y[g_index_func_y_read] / 10;
 
                 // Output.
-                g_y = (uint16_t)((y % (int32_t)g_y_max) & 0xFFFF);
+                g_y = (uint16_t)((y % (int32_t)g_n_y) & 0xFFFF);
                 g_index_frame = FRAMEFROMXY(g_x, g_y);
                 break;
 

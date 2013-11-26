@@ -15,6 +15,7 @@
 
 #define FALSE	0
 #define TRUE	(!FALSE)
+#define INT16MAX	((1<<15)-1)
 
 // ISR slot numbers of the functions called by the timer interrupt, one function per slot.
 #define ISR_TOGGLE_TRIGGER		0
@@ -46,6 +47,7 @@ uint8_t           g_row_compress = FALSE;
 uint8_t           g_ident_compress = FALSE;
 uint8_t           g_num_panels = 0;
 volatile uint16_t g_index_frame = 0;
+uint16_t          g_index_frame_max = 0;
 volatile uint8_t  sync_XY_func = 0;
 uint8_t           usePreloadedPattern = FALSE;
 
@@ -57,7 +59,7 @@ volatile uint16_t g_x = 0,                             g_y = 0;                 
 int16_t           g_x_initial = 0,                     g_y_initial = 0;                     // Initial position set by the user.
 
 uint8_t           g_mode_x = MODE_VEL_OPENLOOP,        g_mode_y = MODE_VEL_OPENLOOP;
-int16_t           g_custom_a_x[5] = {0,0,0,0,0},       g_custom_a_y[5] = {0,0,0,0,0};       // Coefficients for custom modes.  Divided by 10, so that a=10 is a multiplier of 1.0
+int16_t           g_custom_a_x[6] = {0,0,0,0,0,0},     g_custom_a_y[6] = {0,0,0,0,0,0};       // Coefficients for custom modes.  Divided by 10, so that a=10 is a multiplier of 1.0
 
 
 uint32_t          g_nbytes_func_x = RINGBUFFER_LENGTH, g_nbytes_func_y = RINGBUFFER_LENGTH; //function file size
@@ -94,7 +96,6 @@ uint8_t           g_adr_from_panel[129]; // panel twi address mapping, we can ha
 
 static const uint8_t VERSION[] = "1.4\0";
 static const uint8_t SDInfo[] = "SD.mat\0";
-
 
 /*---------------------------------------------------------*/
 /* TWIC Master Interrupt vector.                           */
@@ -133,31 +134,23 @@ ISR(TWIF_TWIM_vect)
 }
 
 
-//external trigger mode for int2 to start playing pattern
+//  External trigger mode for int2 to start playing pattern
 ISR(PORTK_INT0_vect)
 {
 	//set these to zero so that we start at beginning of function - useful for putting in a set amount of expansion.
 	g_index_func_x_read = 0;
 	g_index_func_y_read = 0;
 	g_b_running = TRUE;
-	g_display_count = 0;  //clear the display count
+	g_display_count = 0;
 
 	Reg_Handler(update_display_for_rates,       UPDATE_PERIOD,   ISR_UPDATE_DISPLAY,    TRUE);
-	Reg_Handler(increment_index_x,              UPDATE_PERIOD,   ISR_INCREMENT_INDEX_X, FALSE); //initialize ISRs to a fast rate so that the countdown is fast until the
+	Reg_Handler(increment_index_x,              UPDATE_PERIOD,   ISR_INCREMENT_INDEX_X, FALSE); // Initialize ISRs to a fast rate so that the countdown is fast until the
 	Reg_Handler(increment_index_y,              UPDATE_PERIOD,   ISR_INCREMENT_INDEX_Y, FALSE); // setting of the next rate by the update_display_for_rates interrupt.
-    if (g_b_default_func_x)
-    	Reg_Handler(update_display_for_position_x, g_period_func_x, ISR_INCREMENT_FUNC_X, FALSE);
-    else{
-    	update_display_for_position_x();//add this because the function cnt is updated without delay
-    	Reg_Handler(update_display_for_position_x, g_period_func_x, ISR_INCREMENT_FUNC_X, TRUE);
-	}
-	
-    if (g_b_default_func_y)
-    	Reg_Handler(update_display_for_position_y, g_period_func_y, ISR_INCREMENT_FUNC_Y, FALSE); 
-    else{
-    	update_display_for_position_y();//add this because the function cnt is updated without delay
-    	Reg_Handler(update_display_for_position_y, g_period_func_y, ISR_INCREMENT_FUNC_Y, TRUE); 			
-	}
+
+	update_display_for_position_x(); // So the function is output without delay
+   	Reg_Handler(update_display_for_position_x, g_period_func_x, ISR_INCREMENT_FUNC_X, TRUE);
+   	update_display_for_position_y(); // So the function is output without delay
+   	Reg_Handler(update_display_for_position_y, g_period_func_y, ISR_INCREMENT_FUNC_Y, TRUE);
 
 
 	xputs(PSTR("INT3 catches a rising edge trigger!\n"));
@@ -167,7 +160,7 @@ ISR(PORTK_INT0_vect)
 
 int main(void)
 {
-	FATFS       g_fatfs;       // File system object
+	FATFS       fatfs;       // File system object
     uint8_t     sta, res, b1, temp;
     uint16_t    message_length;
     uint16_t    i;
@@ -321,7 +314,7 @@ int main(void)
     }
     
     xputs(PSTR("Initializing FAT Disk..."));
-    res = f_mount(0, &g_fatfs);
+    res = f_mount(0, &fatfs);
     switch(res)
     {
         case RES_OK: xputs(PSTR(" FAT OK!\n")); break;
@@ -337,7 +330,7 @@ int main(void)
     ledBlink();
     // Here the EEPROM location 0 is used as a switch between Controller and PCDump mode
     // An alternative is to base the switch on the SD config file
-    if (workingModes == 0xff)
+    if (workingModes == WORKINGMODE_CONTROLLER)
     {
         uint8_t msg_buffer[65];
         xputs(PSTR("Current working mode is the Controller mode!\n"));
@@ -408,8 +401,8 @@ int main(void)
 
             }
         }
-    } //if (workingModes == 0xff)
-    else
+    }
+    else // else workingModes==WORKINGMODE_PCDUMPING
     {
         uint8_t msg_buffer[1550];
         xputs(PSTR("Current working mode is the PC dumping mode!\n"));
@@ -457,27 +450,39 @@ void start_running(void)
     g_iblock_func_x = 1;
     g_iblock_func_y = 1;
     g_display_count = 0;  //clear the display count
-    Reg_Handler(update_display_for_rates, UPDATE_PERIOD, ISR_UPDATE_DISPLAY, TRUE);
-    Reg_Handler(increment_index_x,        UPDATE_PERIOD, ISR_INCREMENT_INDEX_X, FALSE); //initialize the 2 and 3 priority interupts to a fast rate so that
-    Reg_Handler(increment_index_y,        UPDATE_PERIOD, ISR_INCREMENT_INDEX_Y, FALSE); // the countdown is fast until the setting of the next rate
-                                                        //by the update_display_for_rates interupt.
-    if (g_b_default_func_x)
-        Reg_Handler(update_display_for_position_x, g_period_func_x, ISR_INCREMENT_FUNC_X, FALSE);
-    else
-    {
-        update_display_for_position_x();
-        Reg_Handler(update_display_for_position_x, g_period_func_x, ISR_INCREMENT_FUNC_X, TRUE);
-    }
 
-    if (g_b_default_func_y)
-        Reg_Handler(update_display_for_position_y, g_period_func_y, ISR_INCREMENT_FUNC_Y, FALSE);
-    else
-    {
-        update_display_for_position_y();
+    Reg_Handler(update_display_for_rates, UPDATE_PERIOD, ISR_UPDATE_DISPLAY, TRUE);
+    Reg_Handler(increment_index_x,        UPDATE_PERIOD, ISR_INCREMENT_INDEX_X, FALSE); // Initialize the 2 and 3 priority interupts to a fast rate so that
+    Reg_Handler(increment_index_y,        UPDATE_PERIOD, ISR_INCREMENT_INDEX_Y, FALSE); // the countdown is fast until the setting of the next rate
+                                                                                        // by the update_display_for_rates interupt.
+//    if (g_b_default_func_x)
+//        Reg_Handler(update_display_for_position_x, g_period_func_x, ISR_INCREMENT_FUNC_X, FALSE);
+//    else
+//    {
+//        update_display_for_position_x();
+        Reg_Handler(update_display_for_position_x, g_period_func_x, ISR_INCREMENT_FUNC_X, TRUE);
+//    }
+//
+//    if (g_b_default_func_y)
+//        Reg_Handler(update_display_for_position_y, g_period_func_y, ISR_INCREMENT_FUNC_Y, FALSE);
+//    else
+//    {
+//        update_display_for_position_y();
         Reg_Handler(update_display_for_position_y, g_period_func_y, ISR_INCREMENT_FUNC_Y, TRUE);
-    }
+//    }
 } // start_running()
 
+
+void stop_running(void)
+{
+    g_b_running = FALSE;
+    //turn off the interupts
+    Reg_Handler(update_display_for_rates,      UPDATE_PERIOD,   ISR_UPDATE_DISPLAY, FALSE);
+    Reg_Handler(increment_index_x,             UPDATE_PERIOD,   ISR_INCREMENT_INDEX_X, FALSE);
+    Reg_Handler(increment_index_y,             UPDATE_PERIOD,   ISR_INCREMENT_INDEX_Y, FALSE);
+    Reg_Handler(update_display_for_position_x, g_period_func_x, ISR_INCREMENT_FUNC_X, FALSE);
+    Reg_Handler(update_display_for_position_y, g_period_func_y, ISR_INCREMENT_FUNC_Y, FALSE);
+}
 
 void handle_message_length_1(uint8_t *msg_buffer)
 {
@@ -495,17 +500,11 @@ void handle_message_length_1(uint8_t *msg_buffer)
             
         case MSG_1_START_W_TRIG:  //Start display & trigger - same as regular, but this also does trigger
         	start_running();
-        	Reg_Handler(toggle_trigger, (uint32_t)OVERFLOW_PERIOD/g_trigger_rate, ISR_TOGGLE_TRIGGER, TRUE); //turn on the trigger toggle
+        	Reg_Handler(toggle_trigger, (uint32_t)OVERFLOW_PERIOD/g_trigger_rate, ISR_TOGGLE_TRIGGER, TRUE); // Turn on the trigger toggler
             break;
 
         case MSG_1_STOP: //stop display
-            g_b_running = FALSE;
-            //turn off the interupts
-            Reg_Handler(update_display_for_rates,      UPDATE_PERIOD,   ISR_UPDATE_DISPLAY, FALSE);
-            Reg_Handler(increment_index_x,             UPDATE_PERIOD,   ISR_INCREMENT_INDEX_X, FALSE);
-            Reg_Handler(increment_index_y,             UPDATE_PERIOD,   ISR_INCREMENT_INDEX_Y, FALSE);
-            Reg_Handler(update_display_for_position_x, g_period_func_x, ISR_INCREMENT_FUNC_X, FALSE);
-            Reg_Handler(update_display_for_position_y, g_period_func_y, ISR_INCREMENT_FUNC_Y, FALSE);
+        	stop_running();
             if (!g_b_default_func_x)
                 fetch_block_func_x(&g_file_func_x, TRUE, 0);
             if (!g_b_default_func_y)
@@ -513,14 +512,8 @@ void handle_message_length_1(uint8_t *msg_buffer)
             break;
             
         case MSG_1_STOP_W_TRIG: //stop display & trigger - same as regular, but this also does trigger
-            g_b_running = FALSE;
-            //turn off the interupts
-            Reg_Handler(update_display_for_rates,      UPDATE_PERIOD,                  ISR_UPDATE_DISPLAY, FALSE);
-            Reg_Handler(increment_index_x,             UPDATE_PERIOD,                  ISR_INCREMENT_INDEX_X, FALSE);
-            Reg_Handler(increment_index_y,             UPDATE_PERIOD,                  ISR_INCREMENT_INDEX_Y, FALSE);
-            Reg_Handler(update_display_for_position_x, g_period_func_x,                ISR_INCREMENT_FUNC_X, FALSE);
-            Reg_Handler(update_display_for_position_y, g_period_func_y,                ISR_INCREMENT_FUNC_Y, FALSE);
-            Reg_Handler(toggle_trigger,                OVERFLOW_PERIOD/g_trigger_rate, ISR_TOGGLE_TRIGGER, FALSE); //turn off the trigger toggle
+        	stop_running();
+            Reg_Handler(toggle_trigger, (uint32_t)OVERFLOW_PERIOD/g_trigger_rate, ISR_TOGGLE_TRIGGER, FALSE); // Turn off the trigger toggler
             digitalWrite(DIO_TRIGGEROUT,LOW);    //set the trigger output to low
             break;
 
@@ -602,12 +595,12 @@ void handle_message_length_1(uint8_t *msg_buffer)
           break;
             
         case MSG_1_CONTROLLER_MODE:    // working mode 1 = default mode = controller mode
-            eeprom_write_byte(work_mode,0xff);
+            eeprom_write_byte(work_mode, WORKINGMODE_CONTROLLER);
             xprintf(PSTR("Reset controller to work in the controller mode!\n"));
             break;
 
         case MSG_1_PC_DUMPING_MODE:
-            eeprom_write_byte(work_mode,0x00);
+            eeprom_write_byte(work_mode, WORKINGMODE_PCDUMPING);
             xprintf(PSTR("Reset controller to work in the PC dumping mode!\n"));
             break;
             
@@ -823,7 +816,7 @@ void handle_message_length_5(uint8_t *msg_buffer)
             
             g_x_initial = g_x; // these only used during position func. control mode, but
             g_y_initial = g_y; //update here should not slow things down much and no need for sep. function.
-            g_index_frame = g_y* g_x_max + g_x;
+            g_index_frame = FRAMEFROMXY(g_x, g_y);
             g_display_count = 0;  //clear the display count
             if (!g_b_quiet_mode)
                 xprintf(PSTR("set_position: g_x= %u,  g_y= %u, and g_index_frame= %u\n"), g_x, g_y, g_index_frame);
@@ -834,8 +827,7 @@ void handle_message_length_5(uint8_t *msg_buffer)
                 fetch_and_display_frame(&g_file_pattern, g_index_frame, g_x, g_y);
             break;
 
-        case MSG_5_SEND_GAIN_BIAS:
-            //'send_gain_bias', all of these are signed byte values
+        case MSG_5_SEND_GAIN_BIAS: // The version of the command with signed 8 bit arguments.
             g_gain_x = (int16_t)msg_buffer[1];
             g_bias_x = (int16_t)msg_buffer[2];
             g_gain_y = (int16_t)msg_buffer[3];
@@ -859,56 +851,56 @@ void handle_message_length_7(uint8_t *msg_buffer)
     {
 		// Custom modes:
 		// For each of the following custom modes, the output (i.e. xpos, ypos, xrate, yrate) may be specified to be any combination of ADC and function inputs.
-		// E.g. set_mode_custom_x_pos(0x14, 0x01) means that xposition = funcx + adc2 - adc0
-		//                                               and xrate = 0
-		//
-		//      set_mode_vel_custom_x(0x08, 0x00) means that xrate = adc3
-		//      set_mode_vel_custom_x(0x00, 0x08) means that xrate = -adc3
+		// E.g. set_mode_pos_custom_x(0, 0, 0, 10, 0, 0) means that xposition = gain*(adc3) + bias,  xrate = 0
+		//      set_mode_vel_custom_x(0, 0, 0, 10, 0, 0) means that xrate = gain*(adc3) + bias
+		//      set_mode_vel_custom_x(-1, 0, 1, 0, 0, 0) means that xrate = gain*(0.1*adc2 - 0.1*adc0) + bias
+	    //      set_mode_vel_custom_x(10, 0, 0, 0, 100, 0) means that xrate = gain*(a0) + 10*fx(t) + bias
 
 
-		// set_mode_pos_custom_x(a5, a4, a3, a2, a1, a0), Set coefficients on input sources for x positions.  xpos = a5*funcy + a4*funcx + a3*adc3 + a2*adc2 + a1*adc1 + a0*adc0; a's valid on [-128,+127].
+		// set_mode_pos_custom_x(a0, a1, a2, a3, a4, a5), Set coefficients on input sources for x positions.  xpos =  a0*adc0 + a1*adc1 + a2*adc2 + a3*adc3 + a4*funcx + a5*funcy; a's valid on [-128,+127].
 		case MSG_7_SET_MODE_POS_CUSTOM_X:
 			g_mode_x = MODE_POS_CUSTOM;
 			for (i=0; i<6; i++)
-				g_custom_a_x[i] = msg_buffer[i+1];
+				g_custom_a_x[i] = (int16_t)msg_buffer[i+1];
 			break;
 
-		// set_mode_pos_custom_y(a5, a4, a3, a2, a1, a0), Set coefficients on input sources for y positions.  ypos = a5*funcy + a4*funcx + a3*adc3 + a2*adc2 + a1*adc1 + a0*adc0; a's valid on [-128,+127].
+		// set_mode_pos_custom_y(a0, a1, a2, a3, a4, a5), Set coefficients on input sources for y positions.  ypos = a0*adc0 + a1*adc1 + a2*adc2 + a3*adc3 + a4*funcx + a5*funcy; a's valid on [-128,+127].
 		case MSG_7_SET_MODE_POS_CUSTOM_Y:
 			g_mode_y = MODE_POS_CUSTOM;
 			for (i=0; i<6; i++)
-				g_custom_a_y[i] = msg_buffer[i+1];
+				g_custom_a_y[i] = (int16_t)msg_buffer[i+1];
 			break;
 
-		// set_mode_vel_custom_x(a5, a4, a3, a2, a1, a0), Set coefficients on input sources for x rates.  xrate = a5*funcy + a4*funcx + a3*adc3 + a2*adc2 + a1*adc1 + a0*adc0; a's valid on [-128,+127].
+		// set_mode_vel_custom_x(a0, a1, a2, a3, a4, a5), Set coefficients on input sources for x rates.  xrate = a0*adc0 + a1*adc1 + a2*adc2 + a3*adc3 + a4*funcx + a5*funcy; a's valid on [-128,+127].
 		case MSG_7_SET_MODE_VEL_CUSTOM_X:
 			g_mode_x = MODE_VEL_CUSTOM;
 			for (i=0; i<6; i++)
-				g_custom_a_x[i] = msg_buffer[i+1];
+				g_custom_a_x[i] = (int16_t)msg_buffer[i+1];
 			break;
 
-		// set_mode_vel_custom_y(a5, a4, a3, a2, a1, a0), Set coefficients on input sources for y rates.  yrate = a5*funcy + a4*funcx + a3*adc3 + a2*adc2 + a1*adc1 + a0*adc0; a's valid on [-128,+127].
+		// set_mode_vel_custom_y(a0, a1, a2, a3, a4, a5), Set coefficients on input sources for y rates.  yrate = a0*adc0 + a1*adc1 + a2*adc2 + a3*adc3 + a4*funcx + a5*funcy; a's valid on [-128,+127].
 		case MSG_7_SET_MODE_VEL_CUSTOM_Y:
 			g_mode_y = MODE_VEL_CUSTOM;
 			for (i=0; i<6; i++)
-				g_custom_a_y[i] = msg_buffer[i+1];
+				g_custom_a_y[i] = (int16_t)msg_buffer[i+1];
 			break;
 
 		default:
 			break;
     }
-}
+} // handle_message_length_7()
 
 
-//set gain and bias
-void handle_message_length_9(uint8_t *msg_buffer) {
-    switch(msg_buffer[0]) {
+
+void handle_message_length_9(uint8_t *msg_buffer)
+{
+    switch(msg_buffer[0])
+    {
 	//load laser trigger pattern first 62 byte data. Laer patter has 128 bytes, but since
 	//the value is either 0 or 1, we can combined them in 12 bytes to 
 	//save serial communicaiton time
 
-        case 0x01:
-            //'send_gain_bias', all of these are signed byte values
+        case MSG_9_SEND_GAIN_BIAS: // The version of the command with signed 16 bit arguments.
             g_gain_x = (uint16_t) msg_buffer[1] + (256*msg_buffer[2]);
             g_bias_x = (uint16_t) msg_buffer[3] + (256*msg_buffer[4]);
             g_gain_y = (uint16_t) msg_buffer[5] + (256*msg_buffer[6]);
@@ -921,7 +913,7 @@ void handle_message_length_9(uint8_t *msg_buffer) {
             i2cMasterSend(0x00, 8, ERROR_CODES[6]);
 			
 	}
-}
+}  // handle_message_length_9()
 
 
 //load laser trigger pattern first 62 byte data. Laser pattern has 128 bytes, but since
@@ -1000,7 +992,8 @@ void display_dumped_frame (uint8_t *msg_buffer)
 } // display_dumped_frame()
 
 
-void display_preload_frame(uint16_t index_frame, uint16_t Xindex, uint16_t Yindex){
+void display_preload_frame(uint16_t index_frame, uint16_t Xindex, uint16_t Yindex)
+{
     // this function will fetch the current frame from the SD-card and display it.
     // pass in f_num instead of using global g_index_frame to ensure that the value of
     // g_index_frame does not change during this function's run
@@ -1051,151 +1044,156 @@ void fetch_and_display_frame(FIL *pFile, uint16_t index_frame, uint16_t Xindex, 
     uint8_t   arrayIndex;
     
 
-    digitalWrite(DIO_FRAMEBUSY, HIGH); // Set line high at start of frame write
-	//if count gets bigger than 1 -> frame skipped
-    if (g_display_count > 1)
-        ledToggle(1);    //toggle LED 1
-    g_display_count = 0;  //clear the display count
-    nbytes_per_frame = g_num_panels * g_bytes_per_panel;
-    
-    if (nbytes_per_frame%512 != 0)
-        block_per_frame = nbytes_per_frame/512 + 1;
-    else
-        block_per_frame = nbytes_per_frame/512;  //for gs=4 and rc=0
-        
-        
-    uint8_t  frameBuff[nbytes_per_frame];
-    offset = NBYTES_HEADER + (uint32_t)index_frame * 512 * block_per_frame;
-
-    fresult = f_lseek(pFile, offset);
-    if ((fresult == FR_OK) && (pFile->fptr == offset))
+    if (index_frame <= g_index_frame_max)
     {
-        fresult = f_read(pFile, frameBuff, nbytes_per_frame, &nbytes_read);
-        if ((fresult == FR_OK) && (nbytes_read == nbytes_per_frame))
-        {
-            buff_index = 0;
-            
-            for (panel_index=1; panel_index <= g_num_panels; panel_index++)
-            {
-                for(j = 0;j < g_bytes_per_panel;j++){
-                    FLASH[j] = frameBuff[buff_index++]; //not good for performance, no need to copy the data
-                }
+		digitalWrite(DIO_FRAMEBUSY, HIGH); // Set line high at start of frame write
+		//if count gets bigger than 1 -> frame skipped
+		if (g_display_count > 1)
+			ledToggle(1);    //toggle LED 1
+		g_display_count = 0;  //clear the display count
+		nbytes_per_frame = g_num_panels * g_bytes_per_panel;
 
-                packet_sent = FALSE; //used with compression to simplify conditionals.
-                if (g_ident_compress)
-                {
-                    if (g_bytes_per_panel == 8)
-                    {
-                        if( (FLASH[0] == FLASH[1])&&(FLASH[2] == FLASH[3])&&(FLASH[4] == FLASH[5])&&(FLASH[6] == FLASH[7]) )
-                        {
-                            if( (FLASH[1] == FLASH[2])&&(FLASH[3] == FLASH[4])&&(FLASH[5] == FLASH[6]) )
-                            {
-                                i2cMasterSend(panel_index, 1, &FLASH[0]); //send a 1 byte packet with the correct row_compressed value.
-                                packet_sent = TRUE;
-                            } //end of second round of comparisons
-                        } //end of first round of byte comparisons
-                    } // end of check if g_bytes_per_panel is 8
-                    
-                    if (g_bytes_per_panel == 24)
-                    {
-                        if( (FLASH[0] == FLASH[1])&&(FLASH[2] == FLASH[3])&&(FLASH[4] == FLASH[5])&&(FLASH[6] == FLASH[7]) ){
-                            if( (FLASH[1] == FLASH[2])&&(FLASH[3] == FLASH[4])&&(FLASH[5] == FLASH[6]) ){
-                                if( (FLASH[8+0] == FLASH[8+1])&&(FLASH[8+2] == FLASH[8+3])&&(FLASH[8+4] == FLASH[8+5])&&(FLASH[8+6] == FLASH[8+7]) ){
-                                    if( (FLASH[8+1] == FLASH[8+2])&&(FLASH[8+3] == FLASH[8+4])&&(FLASH[8+5] == FLASH[8+6]) ){
-                                        if( (FLASH[16+0] == FLASH[16+1])&&(FLASH[16+2] == FLASH[16+3])&&(FLASH[16+4] == FLASH[16+5])&&(FLASH[16+6] == FLASH[16+7]) ){
-                                            if( (FLASH[16+1] == FLASH[16+2])&&(FLASH[16+3] == FLASH[16+4])&&(FLASH[16+5] == FLASH[16+6]) ){
-                                                grayscale[0] = FLASH[0];
-                                                grayscale[1] = FLASH[8];
-                                                grayscale[2] = FLASH[16];
-                                                i2cMasterSend(panel_index, 3, &grayscale[0]); //send a 3 byte packet with the correct row_compressed value.
-                                                packet_sent = TRUE;
-                                            } //end of sixth round of comparisons
-                                        } //end of fifth round of comparisons
-                                    } //end of fourth round of comparisons
-                                } //end of third round of comparisons
-                            } //end of second round of comparisons
-                        } //end of first round of byte comparisons
-                    } // end of check if g_bytes_per_panel is 24
-                    
-                    if (g_bytes_per_panel == 32){
-                        if( (FLASH[0] == FLASH[1])&&(FLASH[2] == FLASH[3])&&(FLASH[4] == FLASH[5])&&(FLASH[6] == FLASH[7]) ){
-                            if( (FLASH[1] == FLASH[2])&&(FLASH[3] == FLASH[4])&&(FLASH[5] == FLASH[6]) ){
-                                if( (FLASH[8+0] == FLASH[8+1])&&(FLASH[8+2] == FLASH[8+3])&&(FLASH[8+4] == FLASH[8+5])&&(FLASH[8+6] == FLASH[8+7]) ){
-                                    if( (FLASH[8+1] == FLASH[8+2])&&(FLASH[8+3] == FLASH[8+4])&&(FLASH[8+5] == FLASH[8+6]) ){
-                                        if( (FLASH[16+0] == FLASH[16+1])&&(FLASH[16+2] == FLASH[16+3])&&(FLASH[16+4] == FLASH[16+5])&&(FLASH[16+6] == FLASH[16+7]) ){
-                                            if( (FLASH[16+1] == FLASH[16+2])&&(FLASH[16+3] == FLASH[16+4])&&(FLASH[16+5] == FLASH[16+6]) ){
-                                                if( (FLASH[24+0] == FLASH[24+1])&&(FLASH[24+2] == FLASH[24+3])&&(FLASH[24+4] == FLASH[24+5])&&(FLASH[24+6] == FLASH[24+7]) ){
-                                                    if( (FLASH[24+1] == FLASH[24+2])&&(FLASH[24+3] == FLASH[24+4])&&(FLASH[24+5] == FLASH[24+6]) ){
-                                                        grayscale[0] = FLASH[0];
-                                                        grayscale[1] = FLASH[8];
-                                                        grayscale[2] = FLASH[16];
-                                                        grayscale[3] = FLASH[24];
-                                                        i2cMasterSend(panel_index, 4, &grayscale[0]); //send a 4 byte packet with the correct row_compressed value.
-                                                        packet_sent = TRUE;
-                                                    }//end
-                                                }//end
-                                            } //end of sixth round of comparisons
-                                        } //end of fifth round of comparisons
-                                    } //end of fourth round of comparisons
-                                } //end of third round of comparisons
-                            } //end of second round of comparisons
-                        } //end of first round of byte comparisons
-                    } // end of check if g_bytes_per_panel is 32
-                } //end of if g_ident_compress
-                
-                //above conditionals rejected sending a simple pattern patch
-                if (!packet_sent)
-                    i2cMasterSend(panel_index, g_bytes_per_panel, &FLASH[0]);
+		if (nbytes_per_frame%512 != 0)
+			block_per_frame = nbytes_per_frame/512 + 1;
+		else
+			block_per_frame = nbytes_per_frame/512;  //for gs=4 and rc=0
 
-            } //end of for all panels loop
-        }
-        else
-        {
-            if (!g_b_quiet_mode)
-            {
-                xputs(PSTR("Error in reading file in fetch_and_display_frame!\n"));
-                xprintf(PSTR("fresult = %u, index_frame= %u, nbytes_read= %u\n"), fresult, index_frame, nbytes_read);
-            }
-        }
+
+		uint8_t  frameBuff[nbytes_per_frame];
+		offset = NBYTES_HEADER + (uint32_t)index_frame * 512 * block_per_frame;
+
+		fresult = f_lseek(pFile, offset);
+		if ((fresult == FR_OK) && (pFile->fptr == offset))
+		{
+			fresult = f_read(pFile, frameBuff, nbytes_per_frame, &nbytes_read);
+			if ((fresult == FR_OK) && (nbytes_read == nbytes_per_frame))
+			{
+				buff_index = 0;
+
+				for (panel_index=1; panel_index <= g_num_panels; panel_index++)
+				{
+					for(j = 0;j < g_bytes_per_panel;j++){
+						FLASH[j] = frameBuff[buff_index++]; //not good for performance, no need to copy the data
+					}
+
+					packet_sent = FALSE; //used with compression to simplify conditionals.
+					if (g_ident_compress)
+					{
+						if (g_bytes_per_panel == 8)
+						{
+							if( (FLASH[0] == FLASH[1])&&(FLASH[2] == FLASH[3])&&(FLASH[4] == FLASH[5])&&(FLASH[6] == FLASH[7]) )
+							{
+								if( (FLASH[1] == FLASH[2])&&(FLASH[3] == FLASH[4])&&(FLASH[5] == FLASH[6]) )
+								{
+									i2cMasterSend(panel_index, 1, &FLASH[0]); //send a 1 byte packet with the correct row_compressed value.
+									packet_sent = TRUE;
+								} //end of second round of comparisons
+							} //end of first round of byte comparisons
+						} // end of check if g_bytes_per_panel is 8
+
+						if (g_bytes_per_panel == 24)
+						{
+							if( (FLASH[0] == FLASH[1])&&(FLASH[2] == FLASH[3])&&(FLASH[4] == FLASH[5])&&(FLASH[6] == FLASH[7]) ){
+								if( (FLASH[1] == FLASH[2])&&(FLASH[3] == FLASH[4])&&(FLASH[5] == FLASH[6]) ){
+									if( (FLASH[8+0] == FLASH[8+1])&&(FLASH[8+2] == FLASH[8+3])&&(FLASH[8+4] == FLASH[8+5])&&(FLASH[8+6] == FLASH[8+7]) ){
+										if( (FLASH[8+1] == FLASH[8+2])&&(FLASH[8+3] == FLASH[8+4])&&(FLASH[8+5] == FLASH[8+6]) ){
+											if( (FLASH[16+0] == FLASH[16+1])&&(FLASH[16+2] == FLASH[16+3])&&(FLASH[16+4] == FLASH[16+5])&&(FLASH[16+6] == FLASH[16+7]) ){
+												if( (FLASH[16+1] == FLASH[16+2])&&(FLASH[16+3] == FLASH[16+4])&&(FLASH[16+5] == FLASH[16+6]) ){
+													grayscale[0] = FLASH[0];
+													grayscale[1] = FLASH[8];
+													grayscale[2] = FLASH[16];
+													i2cMasterSend(panel_index, 3, &grayscale[0]); //send a 3 byte packet with the correct row_compressed value.
+													packet_sent = TRUE;
+												} //end of sixth round of comparisons
+											} //end of fifth round of comparisons
+										} //end of fourth round of comparisons
+									} //end of third round of comparisons
+								} //end of second round of comparisons
+							} //end of first round of byte comparisons
+						} // end of check if g_bytes_per_panel is 24
+
+						if (g_bytes_per_panel == 32){
+							if( (FLASH[0] == FLASH[1])&&(FLASH[2] == FLASH[3])&&(FLASH[4] == FLASH[5])&&(FLASH[6] == FLASH[7]) ){
+								if( (FLASH[1] == FLASH[2])&&(FLASH[3] == FLASH[4])&&(FLASH[5] == FLASH[6]) ){
+									if( (FLASH[8+0] == FLASH[8+1])&&(FLASH[8+2] == FLASH[8+3])&&(FLASH[8+4] == FLASH[8+5])&&(FLASH[8+6] == FLASH[8+7]) ){
+										if( (FLASH[8+1] == FLASH[8+2])&&(FLASH[8+3] == FLASH[8+4])&&(FLASH[8+5] == FLASH[8+6]) ){
+											if( (FLASH[16+0] == FLASH[16+1])&&(FLASH[16+2] == FLASH[16+3])&&(FLASH[16+4] == FLASH[16+5])&&(FLASH[16+6] == FLASH[16+7]) ){
+												if( (FLASH[16+1] == FLASH[16+2])&&(FLASH[16+3] == FLASH[16+4])&&(FLASH[16+5] == FLASH[16+6]) ){
+													if( (FLASH[24+0] == FLASH[24+1])&&(FLASH[24+2] == FLASH[24+3])&&(FLASH[24+4] == FLASH[24+5])&&(FLASH[24+6] == FLASH[24+7]) ){
+														if( (FLASH[24+1] == FLASH[24+2])&&(FLASH[24+3] == FLASH[24+4])&&(FLASH[24+5] == FLASH[24+6]) ){
+															grayscale[0] = FLASH[0];
+															grayscale[1] = FLASH[8];
+															grayscale[2] = FLASH[16];
+															grayscale[3] = FLASH[24];
+															i2cMasterSend(panel_index, 4, &grayscale[0]); //send a 4 byte packet with the correct row_compressed value.
+															packet_sent = TRUE;
+														}//end
+													}//end
+												} //end of sixth round of comparisons
+											} //end of fifth round of comparisons
+										} //end of fourth round of comparisons
+									} //end of third round of comparisons
+								} //end of second round of comparisons
+							} //end of first round of byte comparisons
+						} // end of check if g_bytes_per_panel is 32
+					} //end of if g_ident_compress
+
+					//above conditionals rejected sending a simple pattern patch
+					if (!packet_sent)
+						i2cMasterSend(panel_index, g_bytes_per_panel, &FLASH[0]);
+
+				} //end of for all panels loop
+			}
+			else
+			{
+				if (!g_b_quiet_mode)
+				{
+					xputs(PSTR("Error in reading file in fetch_and_display_frame!\n"));
+					xprintf(PSTR("fresult = %u, index_frame= %u, nbytes_read= %u\n"), fresult, index_frame, nbytes_read);
+				}
+			}
+		}
+		else
+		{
+			if (!g_b_quiet_mode)
+			{
+				xputs(PSTR("Error seeking in fetch_and_display_frame!\n"));
+				xprintf(PSTR("fresult = %u, index_frame= %u, offset = %lu, pFile->fs=%X, pFile->fs->fs_type=%X, pFile->fs->id=%X\n"), fresult, index_frame, offset, pFile->fs, pFile->fs->fs_type, pFile->fs->id);
+			}
+		}
+
+		// Update analog outs
+		if (g_mode_x != MODE_POS_DEBUG)
+		{
+			dac_x = ((uint32_t)Xindex + 1)*32767/g_x_max;
+			analogWrite(0, dac_x); // make it a value in the range 0 - 32767 (0 - 10V)
+		}
+		if (g_mode_y != MODE_POS_DEBUG)
+		{
+			dac_y = ((uint32_t)Yindex + 1)*32767/g_y_max;
+			analogWrite(1, dac_y); // make it a value in the range 0 - 32767 (0 - 10V)
+		}
+
+
+		// Update the output lines for quadrant-type learning patterns.
+		if (g_b_laseractive)
+		{
+			arrayIndex = g_x/8;  // find the index in g_laserpattern array for g_x
+			bitIndex = g_x - arrayIndex*8;  // find the bit index in a g_laserpattern byte for g_x
+
+			tempVal = g_laserpattern[arrayIndex];
+
+			if ((tempVal & (1<<(7-bitIndex))) == 0)
+				digitalWrite(DIO_LASER, LOW);  // turn off laser
+			else
+				digitalWrite(DIO_LASER, HIGH);   // turn on laser
+		}
+
+		digitalWrite(DIO_FRAMEBUSY, LOW); // set line low at end of frame write
     }
     else
-    {
-        if (!g_b_quiet_mode)
-        {
-            xputs(PSTR("Error seeking in fetch_and_display_frame!\n"));
-            xprintf(PSTR("fresult = %u, index_frame= %u, offset = %lu, pFile->fs=%X, pFile->fs->fs_type=%X, pFile->fs->id=%X\n"), fresult, index_frame, offset, pFile->fs, pFile->fs->fs_type, pFile->fs->id);
-        }
-    }
+    	ledToggle(3); // Frame index is invalid, i.e. out of range.
     
-    // Update analog outs
-    if (g_mode_x != MODE_POS_DEBUG)
-    {
-        dac_x = ((uint32_t)Xindex + 1)*32767/g_x_max;
-        analogWrite(0, dac_x); // make it a value in the range 0 - 32767 (0 - 10V)
-    }
-    if (g_mode_y != MODE_POS_DEBUG)
-    {
-        dac_y = ((uint32_t)Yindex + 1)*32767/g_y_max;
-        analogWrite(1, dac_y); // make it a value in the range 0 - 32767 (0 - 10V)
-    }
-
-    
-    // Update the output lines for quadrant-type learning patterns.
-    if (g_b_laseractive)
-    {
-        arrayIndex = g_x/8;  // find the index in g_laserpattern array for g_x
-        bitIndex = g_x - arrayIndex*8;  // find the bit index in a g_laserpattern byte for g_x
-    
-        tempVal = g_laserpattern[arrayIndex];
-    
-        if ((tempVal & (1<<(7-bitIndex))) == 0)
-            digitalWrite(DIO_LASER, LOW);  // turn off laser
-        else
-            digitalWrite(DIO_LASER, HIGH);   // turn on laser
-    }
-    
-    digitalWrite(DIO_FRAMEBUSY, LOW); // set line low at end of frame write
-
 } // fetch_and_display_frame()
 
 
@@ -1244,9 +1242,9 @@ void update_display_for_rates(void)
     // 3 - Position mode:        x=adc(2),   y=adc(3),   xRate=0,                      yRate=0
     // 4 - Function mode:        x=x0+fx(t), y=y0+fy(t), xRate=0,                      yRate=0
     // 5 - function DBG mode
-    // 0x61 custom vel                                   xRate=gain*(a0*adc0 + a1*adc1 + a2*adc2 + a3*adc3) + a4*f(t) + bias, where a's can be {-128,+127}
-    // 0x62 custom pos           x=gain*(a0*adc0 + a1*adc1 + a2*adc2 + a3*adc3) + a4*f(t) + bias,                             where a's can be {-128,+127}
-    
+    // 0x61 custom vel                                   xRate=a0*adc0 + a1*adc1 + a2*adc2 + a3*adc3 + a4*fx(t) + a5*fy(t), where a's can be {-128,+127}
+    // 0x62 custom pos           x=a0*adc0 + a1*adc1 + a2*adc2 + a3*adc3 + a4*fx(t) + a5*fy(t),                             where a's can be {-128,+127}
+
     switch(g_mode_x)
     {
         case MODE_VEL_OPENLOOP:   // Open loop - use function generator to set x rate
@@ -1289,12 +1287,13 @@ void update_display_for_rates(void)
         	adc1  = analogRead(1);
         	adc2  = analogRead(2);
         	adc3  = analogRead(3);
-        	xRate = g_gain_x*(g_custom_a_x[0]*adc0
-                            + g_custom_a_x[1]*adc1
-                            + g_custom_a_x[2]*adc2
-                            + g_custom_a_x[3]*adc3
-                            + g_custom_a_x[4]*g_buf_func_x[g_index_func_x_read]
-                            + g_custom_a_x[5]*g_buf_func_y[g_index_func_y_read])/10 + 5*g_bias_x/2;
+        	xRate = (int16_t)((int32_t)g_gain_x*((int32_t)g_custom_a_x[0]*(int32_t)adc0/10
+                                               + (int32_t)g_custom_a_x[1]*(int32_t)adc1/10
+                                               + (int32_t)g_custom_a_x[2]*(int32_t)adc2/10
+                                               + (int32_t)g_custom_a_x[3]*(int32_t)adc3/10
+                                               + (int32_t)g_custom_a_x[4]*(int32_t)g_buf_func_x[g_index_func_x_read]/10
+                                               + (int32_t)g_custom_a_x[5]*(int32_t)g_buf_func_y[g_index_func_y_read]/10)/10
+                                               + 5*(int32_t)g_bias_x/2);
 
         case MODE_POS_CUSTOM: // Custom position mode.
         	xRate = 0;
@@ -1345,12 +1344,13 @@ void update_display_for_rates(void)
         	adc1  = analogRead(1);
         	adc2  = analogRead(2);
         	adc3  = analogRead(3);
-        	yRate = g_gain_y*(g_custom_a_y[0]*adc0
-                            + g_custom_a_y[1]*adc1
-   	                        + g_custom_a_y[2]*adc2
-   	                        + g_custom_a_y[3]*adc3
-   	                        + g_custom_a_y[4]*g_buf_func_x[g_index_func_x_read]
-   	                        + g_custom_a_y[5]*g_buf_func_y[g_index_func_y_read]) + 5*g_bias_y/2;
+        	yRate = (int16_t)((int32_t)g_gain_y*((int32_t)g_custom_a_y[0]*(int32_t)adc0/10
+                                               + (int32_t)g_custom_a_y[1]*(int32_t)adc1/10
+                      	                       + (int32_t)g_custom_a_y[2]*(int32_t)adc2/10
+   	                                           + (int32_t)g_custom_a_y[3]*(int32_t)adc3/10
+   	                                           + (int32_t)g_custom_a_y[4]*(int32_t)g_buf_func_x[g_index_func_x_read]/10
+   	                                           + (int32_t)g_custom_a_y[5]*(int32_t)g_buf_func_y[g_index_func_y_read]/10)/10
+   	                                           + 5*(int32_t)g_bias_y/2);
 
         case MODE_POS_CUSTOM: // Custom position mode.
         	yRate = 0;
@@ -1431,7 +1431,6 @@ void toggle_trigger(void)
 void loadPattern2Panels(uint8_t pat_num) {
     //sets the pattern ID, in future return 0 or 1 if error/succeed
 	//currently we only support gs = 1 and non-row compression mode
-    uint16_t num_frames;
     static uint8_t str[12];
     uint8_t  pattDataBuff[512];
     uint8_t res;
@@ -1472,13 +1471,15 @@ void loadPattern2Panels(uint8_t pat_num) {
             grayscale = pattDataBuff[5];   //11, 12, 13, or 14 means use row compression
             
             
-            num_frames = g_x_max * g_y_max;
-            if ((grayscale >= 11) & (grayscale <= 14)) {
+            g_index_frame_max = g_x_max * g_y_max;
+            if ((grayscale >= 11) & (grayscale <= 14))
+            {
                 grayscale = grayscale - 10;
                 g_row_compress = 1;
                 g_bytes_per_panel = grayscale;
             }
-            else {
+            else
+            {
                 g_row_compress = 0;
                 g_bytes_per_panel = grayscale * 8;
             }
@@ -1486,7 +1487,7 @@ void loadPattern2Panels(uint8_t pat_num) {
             g_index_frame = 0;
             g_b_running = FALSE;
             g_display_count = 0;  //clear the display flag
-			bytes_per_panel_patten = num_frames*g_bytes_per_panel;
+			bytes_per_panel_patten = g_index_frame_max*g_bytes_per_panel;
             if (!g_b_quiet_mode){
                 xprintf(PSTR("preload pattern %u:\n"), pat_num);
                 xprintf(PSTR("  g_x_max = %u\n  g_y_max = %u\n  num_panels = %u\n  grayscale = %u\n g_row_compression = %u\n"),
@@ -1498,7 +1499,7 @@ void loadPattern2Panels(uint8_t pat_num) {
 			//since panel has only 800 byte for the pattern per panel, we need to check before tranfer
 			if (bytes_per_panel_patten <= 800)
 			{
-				for(f_num = 0; f_num < num_frames; ++f_num)
+				for(f_num = 0; f_num < g_index_frame_max; ++f_num)
 				{
 					len = g_num_panels * g_bytes_per_panel;
 					block_per_frame = len/512 + 1;
@@ -1526,19 +1527,21 @@ void loadPattern2Panels(uint8_t pat_num) {
 								
 								if (g_row_compress == 0)
 									i2cMasterSend(panel_index, g_bytes_per_panel+2, CMD);
-								else{
-									switch(grayscale) {
-									case 1: //the data format is [5, data, f_num_LB, f_num_HB , x, x]
-										i2cMasterSend(panel_index, 5, CMD);
-										break;
-									case 3: //the data format is [6, data1, data2, data 3, f_num_LB, f_num_HB , x]
-										i2cMasterSend(panel_index, 6, CMD);
-										break;
-									case 4: //the data format is [7, data1, data2, data 3, data4, f_num_LB, f_num_HB , x]
-										i2cMasterSend(panel_index, 7, CMD);
-										break;
-									default:
-										break;
+								else
+								{
+									switch(grayscale)
+									{
+										case 1: //the data format is [5, data, f_num_LB, f_num_HB , x, x]
+											i2cMasterSend(panel_index, 5, CMD);
+											break;
+										case 3: //the data format is [6, data1, data2, data 3, f_num_LB, f_num_HB , x]
+											i2cMasterSend(panel_index, 6, CMD);
+											break;
+										case 4: //the data format is [7, data1, data2, data 3, data4, f_num_LB, f_num_HB , x]
+											i2cMasterSend(panel_index, 7, CMD);
+											break;
+										default:
+											break;
 									}
 								}
 								
@@ -1547,16 +1550,21 @@ void loadPattern2Panels(uint8_t pat_num) {
 							} //end of for all panels loop
 						//xprintf(PSTR("f_num_LB %u, f_num_HB %u\n"), CMD[g_bytes_per_panel], CMD[g_bytes_per_panel+1]);
 						}
-						else {
-							if (!g_b_quiet_mode){
+						else
+						{
+							if (!g_b_quiet_mode)
+							{
 								xputs(PSTR("Error in f_read in loadPattern2Panels!\n"));
 								xprintf(PSTR("RES = %u, f_num= %u, cnt= %u\n"), res, f_num, cnt);
 								return;
 							}
 						}
-					} else {
+					}
+					else
+					{
 						
-						if (!g_b_quiet_mode){
+						if (!g_b_quiet_mode)
+						{
 							xputs(PSTR("Error in f_lseek in loadPattern2Panels!\n"));
 							xprintf(PSTR("RES = %u, f_num= %u, offset = %lu\n"), res, f_num, offset);
 							return;
@@ -1564,7 +1572,8 @@ void loadPattern2Panels(uint8_t pat_num) {
 					}
 				}
 			}
-			else{
+			else
+			{
 				xprintf(PSTR("Pattern size is upto 800 byte per panel.\n"));
 				xprintf(PSTR("This pattern size is %lu\n"), bytes_per_panel_patten);
 				xprintf(PSTR("Failed to load this Pattern to Panels\n"));
@@ -1573,12 +1582,16 @@ void loadPattern2Panels(uint8_t pat_num) {
 				return;
 			}
 			
-        } else {
+        }
+        else
+        {
             if (!g_b_quiet_mode)
                 xputs(PSTR("Error reading in pattern file\n"));
 			return;
         }
-    } else {
+    }
+    else
+    {
         if (!g_b_quiet_mode)
             xputs(PSTR("Error opening pattern file\n"));
 			return;
@@ -1592,7 +1605,6 @@ void loadPattern2Panels(uint8_t pat_num) {
 void set_pattern(uint8_t pat_num)
 {
     // Sets the pattern ID.
-    uint16_t       num_frames;
     uint16_t       nbytes_read;
     static uint8_t str[12];
     uint8_t        bufHeader[NBYTES_HEADER];
@@ -1623,7 +1635,7 @@ void set_pattern(uint8_t pat_num)
             grayscale = bufHeader[5];   //11, 12, 13, or 14 means use row compression
             
             
-            num_frames = g_x_max * g_y_max;
+            g_index_frame_max = g_x_max * g_y_max;
             if ((grayscale >= 11) & (grayscale <= 14))
             {
             	grayscale = grayscale - 10;
@@ -1701,21 +1713,19 @@ void set_hwConfig(uint8_t config_num)
 // this function assumes that a pattern has been set
 void benchmark_pattern(void)
 {
-    uint16_t num_frames;
     uint16_t frame_ind;
     uint32_t bench_time;
     uint16_t frame_rate;
     
     g_b_running = FALSE;
-    num_frames = g_x_max*g_y_max;
     
     timer_coarse_tic();
     
-    for(frame_ind = 0; frame_ind < num_frames; frame_ind++)
+    for(frame_ind = 0; frame_ind < g_index_frame_max; frame_ind++)
         fetch_and_display_frame(&g_file_pattern, frame_ind, g_x, g_y);
     
     bench_time = timer_coarse_toc();
-    frame_rate = ((uint32_t)num_frames*1000)/bench_time;
+    frame_rate = ((uint32_t)g_index_frame_max*1000)/bench_time;
     xprintf(PSTR(" bench_time = %lu ms, frame_rate = %u\n"), bench_time, frame_rate);
 	//reset index_x and g_y
 	g_x=0;
@@ -1788,7 +1798,7 @@ void set_default_func(uint8_t channel)
     
     switch (channel)
     {
-        case 1:
+        case 1: // x
             if (!g_b_quiet_mode)
                 xputs(PSTR("Setting default function for X.\n"));
 
@@ -1801,11 +1811,12 @@ void set_default_func(uint8_t channel)
                 g_buf_func_x[i] = 10;
 
             g_index_func_x_read = 0;
+            g_filllevel_buf_func_x = RINGBUFFER_LENGTH;
             g_nblocks_func_x = 1;
             g_nbytes_final_block_x = 0;
             //Reg_Handler(update_display_for_position_x, g_period_func_x, ISR_INCREMENT_FUNC_X, TRUE);// enable ISR
             break;
-        case 2:
+        case 2: // y
             if (!g_b_quiet_mode)
                 xputs(PSTR("Setting default function for Y.\n"));
 
@@ -1818,6 +1829,7 @@ void set_default_func(uint8_t channel)
                 g_buf_func_y[i] = 10;
             
             g_index_func_y_read = 0;
+            g_filllevel_buf_func_y = RINGBUFFER_LENGTH;
             g_nblocks_func_y = 1;
             g_nbytes_final_block_y = 0;
             //Reg_Handler(update_display_for_position_y, g_period_func_y, ISR_INCREMENT_FUNC_Y, TRUE);// enable ISR
@@ -2113,18 +2125,21 @@ void set_vel_func(uint8_t channel, uint8_t id_func)
 //
 void update_display_for_position_x(void)
 {
-    uint16_t adc;
+	int8_t   i;
+    int32_t  adc[4]={0,0,0,0};
     int16_t  dac_x;
     int16_t  x_tmp;
     int32_t  x;
-    int16_t  adc0, adc1, adc2, adc3;
+    int32_t  adc_x;
 
     
     if (g_filllevel_buf_func_x)
     {
         g_index_func_x_read++;
         g_index_func_x_read %= RINGBUFFER_LENGTH;
-        g_filllevel_buf_func_x--;
+
+        if (!g_b_default_func_x)
+        	g_filllevel_buf_func_x--;
 
         switch(g_mode_x)
         {
@@ -2150,16 +2165,28 @@ void update_display_for_position_x(void)
                 break;
 
             case MODE_POS_CUSTOM:  // Custom position mode.
-            	adc0  = analogRead(0);
-            	adc1  = analogRead(1);
-            	adc2  = analogRead(2);
-            	adc3  = analogRead(3);
-            	g_x   = g_gain_x*(g_custom_a_x[0]*adc0
-   	                            + g_custom_a_x[1]*adc1
-   	                            + g_custom_a_x[2]*adc2
-   	                            + g_custom_a_x[3]*adc3
-   	                            + g_custom_a_x[4]*g_buf_func_x[g_index_func_x_read]
-                                + g_custom_a_x[5]*g_buf_func_y[g_index_func_y_read])/10 + 5*g_bias_x/2;
+            	// Read the ADC's if necessary.
+            	for (i=0; i<4; i++)
+            		if (g_custom_a_x[i])
+            			adc[i] = (int32_t)analogRead(0);
+            		else
+            			adc[i] = 0;
+
+            	adc_x = (int32_t)g_custom_a_x[0] * (adc[0] - (int32_t)g_x_adc_max/2) / 10 +
+   	                    (int32_t)g_custom_a_x[1] * (adc[1] - (int32_t)g_x_adc_max/2) / 10 +
+   	                    (int32_t)g_custom_a_x[2] * (adc[2] - (int32_t)g_x_adc_max/2) / 10 +
+   	                    (int32_t)g_custom_a_x[3] * (adc[3] - (int32_t)g_x_adc_max/2) / 10;
+
+            	 // Change the scale from (-adcmax/2,+adcmax/2) to (0,xmax).
+                x = (((int32_t)adc_x * (int32_t)g_x_max / (int32_t)g_x_adc_max) + (int32_t)g_x_max);
+
+                // Add the functions.
+                x += (int32_t)g_custom_a_x[4] * (int32_t)g_buf_func_x[g_index_func_x_read] / 10;
+                x += (int32_t)g_custom_a_x[5] * (int32_t)g_buf_func_y[g_index_func_y_read] / 10;
+
+                // Output.
+                g_x = (uint16_t)((x % (int32_t)g_x_max) & 0xFFFF);
+                g_index_frame = FRAMEFROMXY(g_x, g_y);
             	break;
 
         }
@@ -2175,18 +2202,21 @@ void update_display_for_position_x(void)
 //
 void update_display_for_position_y(void)
 {
-    uint16_t adc;
+	int8_t   i;
+    int32_t  adc[4]={0,0,0,0};
     int16_t  dac_y;
     int16_t  y_tmp;
     int32_t  y;
-    int16_t  adc0, adc1, adc2, adc3;
+    int32_t  adc_y;
 
 
     if (g_filllevel_buf_func_y)
     {
         g_index_func_y_read++;
         g_index_func_y_read %= RINGBUFFER_LENGTH;
-        g_filllevel_buf_func_y--;
+
+        if (!g_b_default_func_y)
+        	g_filllevel_buf_func_y--;
 
         switch(g_mode_y)
         {
@@ -2212,17 +2242,29 @@ void update_display_for_position_y(void)
                 break;
 
             case MODE_POS_CUSTOM:  // Custom position mode.
-            	adc0  = analogRead(0);
-            	adc1  = analogRead(1);
-            	adc2  = analogRead(2);
-            	adc3  = analogRead(3);
-            	g_y   = g_gain_y*(g_custom_a_y[0]*adc0
-                                + g_custom_a_y[1]*adc1
-                                + g_custom_a_y[2]*adc2
-                                + g_custom_a_y[3]*adc3
-           	                    + g_custom_a_y[4]*g_buf_func_x[g_index_func_x_read]
-                                + g_custom_a_y[5]*g_buf_func_y[g_index_func_y_read]) + 5*g_bias_y/2;
-            	break;
+            	// Read the ADC's if necessary.
+            	for (i=0; i<4; i++)
+            		if (g_custom_a_y[i])
+            			adc[i] = (int32_t)analogRead(0);
+            		else
+            			adc[i] = 0;
+
+            	adc_y = (int32_t)g_custom_a_y[0] * (adc[0] - (int32_t)g_y_adc_max/2) / 10 +
+   	                    (int32_t)g_custom_a_y[1] * (adc[1] - (int32_t)g_y_adc_max/2) / 10 +
+   	                    (int32_t)g_custom_a_y[2] * (adc[2] - (int32_t)g_y_adc_max/2) / 10 +
+   	                    (int32_t)g_custom_a_y[3] * (adc[3] - (int32_t)g_y_adc_max/2) / 10;
+
+            	 // Change the scale from (-adcmax/2,+adcmax/2) to (0,ymax).
+                y = (((int32_t)adc_y * (int32_t)g_y_max / (int32_t)g_y_adc_max) + (int32_t)g_y_max);
+
+                // Add the functions.
+                y += (int32_t)g_custom_a_y[4] * (int32_t)g_buf_func_x[g_index_func_x_read] / 10;
+                y += (int32_t)g_custom_a_y[5] * (int32_t)g_buf_func_y[g_index_func_y_read] / 10;
+
+                // Output.
+                g_y = (uint16_t)((y % (int32_t)g_y_max) & 0xFFFF);
+                g_index_frame = FRAMEFROMXY(g_x, g_y);
+                break;
 
         }
     }

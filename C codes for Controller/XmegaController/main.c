@@ -828,10 +828,10 @@ void handle_message_length_5(uint8_t *msg_buffer)
             break;
 
         case MSG_5_SEND_GAIN_BIAS: // The version of the command with signed 8 bit arguments.
-            g_gain_x = (int16_t)msg_buffer[1];
-            g_bias_x = (int16_t)msg_buffer[2];
-            g_gain_y = (int16_t)msg_buffer[3];
-            g_bias_y = (int16_t)msg_buffer[4];
+            g_gain_x = (int16_t)(int8_t)msg_buffer[1];
+            g_bias_x = (int16_t)(int8_t)msg_buffer[2];
+            g_gain_y = (int16_t)(int8_t)msg_buffer[3];
+            g_bias_y = (int16_t)(int8_t)msg_buffer[4];
             if (!g_b_quiet_mode)
                 xprintf(PSTR("set_gain_bias: gain_x= %d,  bias_x= %d, gain_y= %d, bias_y=%d\n"), g_gain_x, g_bias_x, g_gain_y, g_bias_y);
             break;
@@ -861,28 +861,28 @@ void handle_message_length_7(uint8_t *msg_buffer)
 		case MSG_7_SET_MODE_POS_CUSTOM_X:
 			g_mode_x = MODE_POS_CUSTOM;
 			for (i=0; i<6; i++)
-				g_custom_a_x[i] = (int16_t)msg_buffer[i+1];
+				g_custom_a_x[i] = (int16_t)(int8_t)msg_buffer[i+1];
 			break;
 
 		// set_mode_pos_custom_y(a0, a1, a2, a3, a4, a5), Set coefficients on input sources for y positions.  ypos = a0*adc0 + a1*adc1 + a2*adc2 + a3*adc3 + a4*funcx + a5*funcy; a's valid on [-128,+127].
 		case MSG_7_SET_MODE_POS_CUSTOM_Y:
 			g_mode_y = MODE_POS_CUSTOM;
 			for (i=0; i<6; i++)
-				g_custom_a_y[i] = (int16_t)msg_buffer[i+1];
+				g_custom_a_y[i] = (int16_t)(int8_t)msg_buffer[i+1];
 			break;
 
 		// set_mode_vel_custom_x(a0, a1, a2, a3, a4, a5), Set coefficients on input sources for x rates.  xrate = a0*adc0 + a1*adc1 + a2*adc2 + a3*adc3 + a4*funcx + a5*funcy; a's valid on [-128,+127].
 		case MSG_7_SET_MODE_VEL_CUSTOM_X:
 			g_mode_x = MODE_VEL_CUSTOM;
 			for (i=0; i<6; i++)
-				g_custom_a_x[i] = (int16_t)msg_buffer[i+1];
+				g_custom_a_x[i] = (int16_t)(int8_t)msg_buffer[i+1];
 			break;
 
 		// set_mode_vel_custom_y(a0, a1, a2, a3, a4, a5), Set coefficients on input sources for y rates.  yrate = a0*adc0 + a1*adc1 + a2*adc2 + a3*adc3 + a4*funcx + a5*funcy; a's valid on [-128,+127].
 		case MSG_7_SET_MODE_VEL_CUSTOM_Y:
 			g_mode_y = MODE_VEL_CUSTOM;
 			for (i=0; i<6; i++)
-				g_custom_a_y[i] = (int16_t)msg_buffer[i+1];
+				g_custom_a_y[i] = (int16_t)(int8_t)msg_buffer[i+1];
 			break;
 
 		default:

@@ -81,16 +81,18 @@
 #define MSG_3_SET_MAX_VOLTAGE          0x35
 #define MSG_3_SET_VOLTAGE_RANGE_ADC    0x62
 
-#define MSG_4_SET_AO_POS              0x10
-#define MSG_4_SET_AO_NEG              0x11
+#define MSG_4_SET_AO_POS               0x10
+#define MSG_4_SET_AO_NEG               0x11
 
-#define MSG_5_SET_POSITION            0x70
-#define MSG_5_SEND_GAIN_BIAS          0x71
+#define MSG_5_SET_POSITION             0x70
+#define MSG_5_SEND_GAIN_BIAS           0x71
 
 #define MSG_7_SET_MODE_POS_CUSTOM_X    0x63
 #define MSG_7_SET_MODE_POS_CUSTOM_Y    0x64
 #define MSG_7_SET_MODE_VEL_CUSTOM_X    0x65
 #define MSG_7_SET_MODE_VEL_CUSTOM_Y    0x66
+
+#define MSG_9_SEND_GAIN_BIAS           0x01
 
 
 // Define mode numbers.
@@ -103,6 +105,8 @@
 #define MODE_VEL_CUSTOM                0x61
 #define MODE_POS_CUSTOM                0x62
 
+#define WORKINGMODE_CONTROLLER         0xFF
+#define WORKINGMODE_PCDUMPING          0x00
 
 void init_all(void);
 

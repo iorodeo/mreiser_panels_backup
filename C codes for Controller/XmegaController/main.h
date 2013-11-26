@@ -148,7 +148,6 @@ void set_vel_func(uint8_t func_channel, uint8_t func_id);
 void set_pos_func(uint8_t func_channel, uint8_t func_id);
 void set_default_func(uint8_t func_channel);
 
-void loadPattern2Panels(uint8_t pat_num);
 void display_dumped_frame (uint8_t *msg_buffer);
 
 void dump_mat(void);

@@ -1460,7 +1460,7 @@ void set_pattern(uint8_t pat_num)
             ((uint8_t*)&g_n_y)[1] = bufHeader[3];
             g_num_panels = bufHeader[4];
             grayscale = bufHeader[5];   //11, 12, 13, or 14 means use row compression
-            ledShow4Bits(g_n_x>>4);
+
             g_n_frames = g_n_x * g_n_y;
             if ((grayscale >= 11) & (grayscale <= 14))
             {

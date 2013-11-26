@@ -219,6 +219,24 @@ void CCPWrite( volatile uint8_t * address, uint8_t value )
 	SREG = saved_sreg;
 }
 
+// Display the lower four bits on the four controller leds.
+//
+void ledShow4Bits (uint8_t byte)
+{
+	// Shift and reverse the bits.
+	byte &= 0x0F;
+	byte |= (byte & 0x01) ? 0x80 : 0;
+	byte |= (byte & 0x02) ? 0x40 : 0;
+	byte |= (byte & 0x04) ? 0x20 : 0;
+	byte |= (byte & 0x08) ? 0x10 : 0;
+	byte &= 0xF0;
+
+	// Output them.
+	PORTJ.OUTCLR = byte;
+	PORTJ.OUTSET = ~byte;
+
+}
+
 void ledWrite( uint8_t led, uint8_t value )
 {
 	// ignore write if out-ouf-bounds argument

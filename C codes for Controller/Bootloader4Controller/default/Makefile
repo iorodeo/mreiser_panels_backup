@@ -11,11 +11,11 @@ F_CPU            = 2000000
 OPTIMIZE         = 
 DEFS             = -DF_CPU=$(F_CPU)UL
 LIBS             =
-#FLASH_PROGRAMMER = avr109
-#FLASH_SERIALPORT = /dev/ttyUSB0
-FLASH_BAUDRATE   = 115200
-FLASH_PROGRAMMER = avrispmkII
-FLASH_SERIALPORT = usb
+#BURN_PROGRAMMER = avr109
+#BURN_SERIALPORT = /dev/ttyUSB0
+BURN_BAUDRATE   = 115200
+BURN_PROGRAMMER = avrispmkII
+BURN_SERIALPORT = usb
 
 
 ## Programs.
@@ -86,13 +86,14 @@ hex:  $(TARGET).hex
 
 
 ## Clean target
-.PHONY: clean flash
+.PHONY: clean install
 clean:
 	-rm -rf $(OBJ) $(TARGET).elf dep/* $(TARGET).hex $(TARGET).eep $(TARGET).lss $(TARGET).map
 
 
-flash:
-	avrdude -p $(MCU_TARGET) -P $(FLASH_SERIALPORT) -b $(FLASH_BAUDRATE) -c avr109 -e -U flash:w:$(TARGET).hex
+## Write the bits onto the chip.
+install:
+	avrdude -p $(MCU_TARGET) -P $(BURN_SERIALPORT) -b $(BURN_BAUDRATE) -c avr109 -e -U flash:w:$(TARGET).hex
 
 
 ## Other dependencies

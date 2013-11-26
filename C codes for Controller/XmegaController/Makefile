@@ -12,11 +12,11 @@ OPTIMIZE       = -Os -mcall-prologues
 DEFS           = -DF_CPU=$(F_CPU)UL
 LIBS           =
 DEBUG          = dwarf-2
-#FLASH_PROGRAMMER = avr109
-#FLASH_SERIALPORT = /dev/ttyUSB0
-FLASH_BAUDRATE   = 115200
-FLASH_PROGRAMMER = avrispmkII
-FLASH_SERIALPORT = usb
+#BURN_PROGRAMMER = avr109
+#BURN_SERIALPORT = /dev/ttyUSB0
+BURN_BAUDRATE   = 115200
+BURN_PROGRAMMER = avrispmkII
+BURN_SERIALPORT = usb
 
 
 ## Programs.
@@ -75,14 +75,15 @@ size: $(TARGET).elf
     
 
 ## Clean target
-.PHONY: clean flash
+.PHONY: clean install
 clean:
 	rm -rf *.o $(TARGET).elf *.eps *.bak *.a
 	rm -rf *.lst *.map $(EXTRA_CLEAN_FILES)
 	rm -rf $(TARGET).hex
 
 
-flash:
-	avrdude -p $(MCU_TARGET) -P $(FLASH_SERIALPORT) -b $(FLASH_BAUDRATE) -c $(FLASH_PROGRAMMER) -e -U flash:w:$(TARGET).hex
+## Write the bits onto the chip.
+install:
+	avrdude -p $(MCU_TARGET) -P $(BURN_SERIALPORT) -b $(BURN_BAUDRATE) -c $(BURN_PROGRAMMER) -e -U flash:w:$(TARGET).hex
 
     

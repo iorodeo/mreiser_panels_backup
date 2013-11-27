@@ -10,6 +10,8 @@
 #define UPDATE_PERIOD     OVERFLOW_PERIOD/400
 #define FUNCTION_PERIOD   OVERFLOW_PERIOD/50
 
+#define CHANNEL_X         1
+#define CHANNEL_Y         2
 
 #define BAUDRATE	      400000
 #define TWI_BAUDSETTING   TWI_BAUD(F_CPU, BAUDRATE)
@@ -124,7 +126,9 @@ void handle_message_length_52(uint8_t *msg_buffer);
 
 
 //routines for updating display, computing new pattern indices
-void update_display_for_rates(void);
+void calculate_and_set_velocity(void);
+void calculate_and_set_position_x(void);
+void calculate_and_set_position_y(void);
 void increment_index_x(void);
 void increment_index_y(void);
 void decrement_index_x(void);
@@ -132,8 +136,6 @@ void decrement_index_y(void);
 void fetch_and_display_frame(FIL *pFile, uint16_t, uint16_t);
 void display_preload_frame(uint16_t f_num, uint16_t, uint16_t);
 void update_ANOUT(void);
-void update_display_for_position_x(void);
-void update_display_for_position_y(void);
 
 //helper utilities
 void toggle_trigger(void);

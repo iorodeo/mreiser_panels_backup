@@ -1684,7 +1684,7 @@ void set_hwConfig(uint8_t config_num)
 // this function assumes that a pattern has been set
 void benchmark_pattern(void)
 {
-    uint16_t frame_ind;
+    uint16_t x, y;
     uint32_t bench_time;
     uint16_t frame_rate;
     
@@ -1692,8 +1692,9 @@ void benchmark_pattern(void)
     
     timer_coarse_tic();
     
-    for(frame_ind = 0; frame_ind < g_n_frames; frame_ind++)
-        fetch_and_display_frame(&g_file_pattern, g_x, g_y);
+    for (y=0; y<g_n_y; y++)
+        for (x=0; x<g_n_x; x++)
+            fetch_and_display_frame(&g_file_pattern, x, y);
     
     bench_time = timer_coarse_toc();
     frame_rate = ((uint32_t)g_n_frames*1000)/bench_time;

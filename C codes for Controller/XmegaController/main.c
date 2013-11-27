@@ -379,7 +379,7 @@ int main(void)
                 if (g_index_frame != index_frame_prev)
                 {
                     index_frame_prev = g_index_frame; //update the 'old' frame number
-                    fetch_and_display_frame(&g_file_pattern, g_index_frame, g_x, g_y);
+                    fetch_and_display_frame(&g_file_pattern, g_x, g_y);
                 }
                 
                 //g_filllevel_buf_func_x in word, 2 bytes.
@@ -824,7 +824,7 @@ void handle_message_length_5(uint8_t *msg_buffer)
 			if (usePreloadedPattern == 1)
 				display_preload_frame(g_index_frame, g_x, g_y);
 			else
-                fetch_and_display_frame(&g_file_pattern, g_index_frame, g_x, g_y);
+                fetch_and_display_frame(&g_file_pattern, g_x, g_y);
             break;
 
         case MSG_5_SEND_GAIN_BIAS: // The version of the command with signed 8 bit arguments.
@@ -1022,19 +1022,16 @@ void display_preload_frame(uint16_t index_frame, uint16_t Xindex, uint16_t Yinde
 
 // fetch_and_display_frame()
 //   Fetch the current frame from the SD-card and display it.
-//   pass in index_frame instead of using global g_index_frame to ensure that the value of
-//   g_index_frame does not change during this function's run
-//   suppose index_frame is from 0 to (n_num * g_n_y - 1)
 //
-void fetch_and_display_frame(FIL *pFile, uint16_t index_frame, uint16_t Xindex, uint16_t Yindex)
+void fetch_and_display_frame(FIL *pFile, uint16_t x, uint16_t y)
 {
+	uint16_t  index_frame;
     uint8_t   j, panel_index;
     uint8_t   packet_sent;
     uint8_t   grayscale[4];
     uint8_t   *FLASH;
     uint16_t  nbytes_per_frame;
     uint16_t  nbytes_read;
-    uint16_t  buff_index;
     uint32_t  offset;
     FRESULT   fresult;
     uint16_t  dac_x, dac_y;
@@ -1044,13 +1041,14 @@ void fetch_and_display_frame(FIL *pFile, uint16_t index_frame, uint16_t Xindex, 
     uint8_t   arrayIndex;
     
 
+    index_frame = FRAMEFROMXY(x, y);
     if (index_frame < g_n_frames)
     {
 		digitalWrite(DIO_FRAMEBUSY, HIGH); // Set line high at start of frame write
-		//if count gets bigger than 1 -> frame skipped
+		// If count gets bigger than 1 -> frame skipped
 		if (g_display_count > 1)
-			ledToggle(1);    //toggle LED 1
-		g_display_count = 0;  //clear the display count
+			ledToggle(1);
+		g_display_count = 0;
 		nbytes_per_frame = g_num_panels * g_bytes_per_panel;
 
 		if (nbytes_per_frame%512 != 0)
@@ -1068,7 +1066,6 @@ void fetch_and_display_frame(FIL *pFile, uint16_t index_frame, uint16_t Xindex, 
 			fresult = f_read(pFile, frameBuff, nbytes_per_frame, &nbytes_read);
 			if ((fresult == FR_OK) && (nbytes_read == nbytes_per_frame))
 			{
-				buff_index = 0;
 
 				for (panel_index=1; panel_index <= g_num_panels; panel_index++)
 				{
@@ -1163,12 +1160,12 @@ void fetch_and_display_frame(FIL *pFile, uint16_t index_frame, uint16_t Xindex, 
 		// Update analog outs
 		if (g_mode_x != MODE_POS_DEBUG)
 		{
-			dac_x = ((uint32_t)Xindex + 1)*32767/g_n_x;
+			dac_x = ((uint32_t)x + 1)*32767/g_n_x;
 			analogWrite(0, dac_x); // make it a value in the range 0 - 32767 (0 - 10V)
 		}
 		if (g_mode_y != MODE_POS_DEBUG)
 		{
-			dac_y = ((uint32_t)Yindex + 1)*32767/g_n_y;
+			dac_y = ((uint32_t)y + 1)*32767/g_n_y;
 			analogWrite(1, dac_y); // make it a value in the range 0 - 32767 (0 - 10V)
 		}
 
@@ -1176,8 +1173,8 @@ void fetch_and_display_frame(FIL *pFile, uint16_t index_frame, uint16_t Xindex, 
 		// Update the output lines for quadrant-type learning patterns.
 		if (g_b_laseractive)
 		{
-			arrayIndex = g_x/8;  // find the index in g_laserpattern array for g_x
-			bitIndex = g_x - arrayIndex*8;  // find the bit index in a g_laserpattern byte for g_x
+			arrayIndex = x/8;  // find the index in g_laserpattern array for x
+			bitIndex = x - arrayIndex*8;  // find the bit index in a g_laserpattern byte for x
 
 			tempVal = g_laserpattern[arrayIndex];
 
@@ -1481,7 +1478,7 @@ void set_pattern(uint8_t pat_num)
                 xprintf(PSTR("  g_n_x = %u\n  g_n_y = %u\n  g_num_panels = %u\n  grayscale = %u\n row_compression = %u\n"),
                         g_n_x, g_n_y, g_num_panels, grayscale, g_row_compress);
             }
-            fetch_and_display_frame(&g_file_pattern, g_index_frame, g_x, g_y);
+            fetch_and_display_frame(&g_file_pattern, g_x, g_y);
         }
         else
         	xputs(PSTR("Error reading in pattern file\n"));
@@ -1546,7 +1543,7 @@ void benchmark_pattern(void)
     timer_coarse_tic();
     
     for(frame_ind = 0; frame_ind < g_n_frames; frame_ind++)
-        fetch_and_display_frame(&g_file_pattern, frame_ind, g_x, g_y);
+        fetch_and_display_frame(&g_file_pattern, g_x, g_y);
     
     bench_time = timer_coarse_toc();
     frame_rate = ((uint32_t)g_n_frames*1000)/bench_time;

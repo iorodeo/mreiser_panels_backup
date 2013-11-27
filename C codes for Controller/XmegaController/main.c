@@ -1031,7 +1031,7 @@ void fetch_and_display_frame(FIL *pFile, uint16_t index_frame, uint16_t Xindex, 
     uint8_t   j, panel_index;
     uint8_t   packet_sent;
     uint8_t   grayscale[4];
-    uint8_t   FLASH[32];
+    uint8_t   *FLASH;
     uint16_t  nbytes_per_frame;
     uint16_t  nbytes_read;
     uint16_t  buff_index;
@@ -1072,9 +1072,7 @@ void fetch_and_display_frame(FIL *pFile, uint16_t index_frame, uint16_t Xindex, 
 
 				for (panel_index=1; panel_index <= g_num_panels; panel_index++)
 				{
-					for(j = 0;j < g_bytes_per_panel;j++){
-						FLASH[j] = frameBuff[buff_index++]; //not good for performance, no need to copy the data
-					}
+					FLASH = &frameBuff[(panel_index-1)*g_bytes_per_panel]; // Point to the proper data.
 
 					packet_sent = FALSE; //used with compression to simplify conditionals.
 					if (g_ident_compress)

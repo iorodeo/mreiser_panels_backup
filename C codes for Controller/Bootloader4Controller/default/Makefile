@@ -11,6 +11,7 @@ F_CPU            = 2000000
 OPTIMIZE         = 
 DEFS             = -DF_CPU=$(F_CPU)UL
 LIBS             =
+
 #BURN_PROGRAMMER = avr109
 #BURN_SERIALPORT = /dev/ttyUSB0
 BURN_BAUDRATE   = 115200
@@ -88,12 +89,15 @@ hex:  $(TARGET).hex
 ## Clean target
 .PHONY: clean install
 clean:
-	-rm -rf $(OBJ) $(TARGET).elf dep/* $(TARGET).hex $(TARGET).eep $(TARGET).lss $(TARGET).map
+	rm -rf $(OBJ) $(TARGET).elf dep/* $(TARGET).hex $(TARGET).eep $(TARGET).lss $(TARGET).map
 
 
 ## Write the bits onto the chip.
 install:
-	avrdude -p $(MCU_TARGET) -P $(BURN_SERIALPORT) -b $(BURN_BAUDRATE) -c avr109 -e -U flash:w:$(TARGET).hex
+	avrdude -p $(MCU_TARGET) -P $(BURN_SERIALPORT) -b $(BURN_BAUDRATE) -c $(BURN_PROGRAMMER) -e -U boot:w:$(TARGET).hex
+	# Note: if you have trouble with avrdude writing to the boot section, try the following command (worked for me with
+	# avrdude 6.01, compiled after libelf was installed).
+	# avrdude -p $(MCU_TARGET) -P $(BURN_SERIALPORT) -b $(BURN_BAUDRATE) -c $(BURN_PROGRAMMER) -e -U boot:w:$(TARGET).elf
 
 
 ## Other dependencies

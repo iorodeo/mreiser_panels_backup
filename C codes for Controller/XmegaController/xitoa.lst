@@ -408,11 +408,11 @@
  415:xitoa.S       **** 	ret
  416               	.endfunc
 DEFINED SYMBOLS
-             xitoa.S:50     .bss:00000000 xfunc_out
-             xitoa.S:57     .text:00000000 xputc
-             xitoa.S:88     .text:0000001e xputs
-             xitoa.S:112    .text:0000002c xitoa
-             xitoa.S:193    .text:000000a2 xprintf
-             xitoa.S:321    .text:0000015e xatoi
+             xitoa.S:50     .bss:0000000000000000 xfunc_out
+             xitoa.S:57     .text:0000000000000000 xputc
+             xitoa.S:88     .text:000000000000001e xputs
+             xitoa.S:112    .text:000000000000002c xitoa
+             xitoa.S:193    .text:00000000000000a2 xprintf
+             xitoa.S:321    .text:000000000000015e xatoi
 
 NO UNDEFINED SYMBOLS

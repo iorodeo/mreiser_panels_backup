@@ -60,8 +60,8 @@ void uart_init()
   txfifo.count = 0;
 
 
-//  USARTC0.BAUDCTRLA = 0x17;   // BSCALE = -6, BSEL = 1047
-//  USARTC0.BAUDCTRLB = 0xA4;   // ==> 115211 bps (~115.2kbps)
+  USARTC0.BAUDCTRLA = 0x17;   // BSCALE = -6, BSEL = 1047
+  USARTC0.BAUDCTRLB = 0xA4;   // ==> 115211 bps (~115.2kbps)
 
 //  USARTC0.BAUDCTRLA = 0xEC;   // BSCALE = -6, BSEL = 492
 //  USARTC0.BAUDCTRLB = 0xA1;   // ==> 230400 bps 
@@ -69,8 +69,8 @@ void uart_init()
 //  USARTC0.BAUDCTRLA = 0xD6;   // BSCALE = -6, BSEL = 214
 //  USARTC0.BAUDCTRLB = 0xA0;   // ==> 460800 bps
   
-  USARTC0.BAUDCTRLA = 0x4B;   // BSCALE = -6, BSEL = 75
-  USARTC0.BAUDCTRLB = 0xA0;   // ==> 921600 bps
+//  USARTC0.BAUDCTRLA = 0x4B;   // BSCALE = -6, BSEL = 75
+//  USARTC0.BAUDCTRLB = 0xA0;   // ==> 921600 bps
   
 //  USARTC0.BAUDCTRLA = 0x05;   // BSCALE = -6, BSEL = 5
 //  USARTC0.BAUDCTRLB = 0xA0;   // ==> 1843200 bps

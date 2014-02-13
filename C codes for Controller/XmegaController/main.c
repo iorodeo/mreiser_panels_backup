@@ -95,7 +95,7 @@ uint8_t           g_adr_from_panel[129]; // panel twi address mapping, we can ha
 
 
 
-static const uint8_t VERSION[] = "1.5\0";
+static const uint8_t VERSION[] = "1.6\0";
 static const uint8_t SDInfo[] = "SD.mat\0";
 
 /*---------------------------------------------------------*/

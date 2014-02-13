@@ -12,7 +12,7 @@
 #include "xitoa.h"
 #include "timer.h"
 #include <avr/eeprom.h>
-
+#include "util/atomic.h"
 #define FALSE	0
 #define TRUE	(!FALSE)
 #define INT16MAX	((1<<15)-1)
@@ -37,25 +37,30 @@
 
 
 // Globals - try to cut down on these.
-volatile uint8_t  g_b_running = FALSE;
 uint8_t           g_b_laseractive = FALSE;
 uint8_t           g_b_quiet_mode = TRUE;
 
-uint8_t           g_display_count = 0;
 uint8_t           g_bytes_per_panel;
 uint8_t           g_row_compress = FALSE;
 uint8_t           g_ident_compress = FALSE;
 uint8_t           g_num_panels = 0;
-volatile uint16_t g_index_frame = 0;
 uint16_t          g_n_frames = 0;                                                           // Number of frames.  Max index is (g_n_frames - 1).
-volatile uint8_t  sync_XY_func = 0;
 uint8_t           usePreloadedPattern = FALSE;
 
+// The following vars are modified in isr's, and need to be accessed atomically by non-isr's.
+volatile uint8_t  g_b_running = FALSE;
+volatile uint16_t g_x = 0,                             g_y = 0;                             // Current index of x and y
+volatile uint16_t g_index_frame = 0;
+volatile uint8_t  g_display_count = 0;
+volatile uint8_t  g_index_func_x_read = 0,             g_index_func_y_read = 0;             // Read index for the ring buffer g_buf_func_x[RINGBUFFER_LENGTH]
+volatile uint8_t  g_index_func_x_write = 0,            g_index_func_y_write = 0;            // Write index for the ring buffer g_buf_func_x[RINGBUFFER_LENGTH]
+volatile uint8_t  g_filllevel_buf_func_x = 0,          g_filllevel_buf_func_y = 0;          // How far ahead of the read index is the write index.
+volatile int8_t   g_b_xrate_greater_yrate = FALSE;
+// End of isr vars.
 
 uint16_t          g_x_adc_max = DAQRESOLUTION,         g_y_adc_max = DAQRESOLUTION;         // 12 bit signed ADC, so really 13 bits.
 
 uint16_t          g_n_x = 1,                           g_n_y = 1;                           // Number of x and y 0-based positions.  Max index for x is (g_n_x - 1), similar for y.
-volatile uint16_t g_x = 0,                             g_y = 0;                             // Current index of x and y
 int16_t           g_x_initial = 0,                     g_y_initial = 0;                     // Initial position set by the user.
 
 uint8_t           g_mode_x = MODE_VEL_OPENLOOP,        g_mode_y = MODE_VEL_OPENLOOP;
@@ -64,21 +69,17 @@ int16_t           g_custom_a_x[6] = {0,0,0,0,0,0},     g_custom_a_y[6] = {0,0,0,
 
 uint32_t          g_nbytes_func_x = RINGBUFFER_LENGTH, g_nbytes_func_y = RINGBUFFER_LENGTH; //function file size
 int16_t           g_buf_func_x[RINGBUFFER_LENGTH],     g_buf_func_y[RINGBUFFER_LENGTH];     // Ring buffer for function data.
-volatile uint8_t  g_index_func_x_read = 0,             g_index_func_y_read = 0;             // Read index for the ring buffer g_buf_func_x[RINGBUFFER_LENGTH]
-volatile uint8_t  g_index_func_x_write = 0,            g_index_func_y_write = 0;            // Write index for the ring buffer g_buf_func_x[RINGBUFFER_LENGTH]
-volatile uint8_t  g_filllevel_buf_func_x = 0,          g_filllevel_buf_func_y = 0;          // How far ahead of the read index is the write index.
 
-volatile uint8_t  g_iblock_func_x = 1,                 g_iblock_func_y = 1;                 // Index of the current block.
+uint8_t           g_iblock_func_x = 1,                 g_iblock_func_y = 1;                 // Index of the current block.
 uint16_t          g_nblocks_func_x = 1,                g_nblocks_func_y = 1;                // Total number of blocks.
 uint16_t          g_nbytes_final_block_x = 0,          g_nbytes_final_block_y = 0;          // Length of the final block.
 
-volatile uint8_t  g_b_default_func_x = TRUE,           g_b_default_func_y = TRUE;
+uint8_t           g_b_default_func_x = TRUE,           g_b_default_func_y = TRUE;
 uint16_t          g_id_func_x = 0,                     g_id_func_y = 0;
 uint16_t          g_period_func_x = FUNCTION_PERIOD,   g_period_func_y = FUNCTION_PERIOD;
 
 int16_t           g_gain_x = 0,                        g_gain_y = 0;    // Gain is x10.  So that gain=10 means a multiplier of 1.0.  Note allowed values -128 to +127.
 int16_t           g_bias_x = 0,                        g_bias_y = 0;    // Bias is x10.  So that bias=10 means an addition of 1.0.  Note allowed values -128 to +127.
-int8_t            g_b_xrate_greater_yrate = FALSE;
 uint16_t          g_trigger_rate = 200;
 
 uint8_t           g_laserpattern[125];
@@ -98,7 +99,7 @@ static const uint8_t VERSION[] = "1.5\0";
 static const uint8_t SDInfo[] = "SD.mat\0";
 
 /*---------------------------------------------------------*/
-/* TWIC Master Interrupt vector.                           */
+/* TWI Master Interrupt vectors for ports C,D,E,F.         */
 /*---------------------------------------------------------*/
 
 ISR(TWIC_TWIM_vect)
@@ -106,27 +107,15 @@ ISR(TWIC_TWIM_vect)
     TWI_MasterInterruptHandler(&twi1);
 }
 
-/*---------------------------------------------------------*/
-/* TWID Master Interrupt vector.                           */
-/*---------------------------------------------------------*/
-
 ISR(TWID_TWIM_vect)
 {
     TWI_MasterInterruptHandler(&twi2);
 }
 
-/*---------------------------------------------------------*/
-/* TWIE Master Interrupt vector.                           */
-/*---------------------------------------------------------*/
-
 ISR(TWIE_TWIM_vect)
 {
     TWI_MasterInterruptHandler(&twi3);
 }
-
-/*---------------------------------------------------------*/
-/* TWIF Master Interrupt vector.                           */
-/*---------------------------------------------------------*/
 
 ISR(TWIF_TWIM_vect)
 {
@@ -143,14 +132,14 @@ ISR(PORTK_INT0_vect)
 	g_b_running = TRUE;
 	g_display_count = 0;
 
-	Reg_Handler(calculate_and_set_velocity,       UPDATE_PERIOD,   ISR_UPDATE_DISPLAY,    TRUE);
-	Reg_Handler(increment_index_x,              UPDATE_PERIOD,   ISR_INCREMENT_INDEX_X, FALSE); // Initialize ISRs to a fast rate so that the countdown is fast until the
-	Reg_Handler(increment_index_y,              UPDATE_PERIOD,   ISR_INCREMENT_INDEX_Y, FALSE); // setting of the next rate by the calculate_and_set_velocity interrupt.
+	Reg_Handler(isr_calculate_and_set_velocity, UPDATE_PERIOD,   ISR_UPDATE_DISPLAY,    TRUE);
+	Reg_Handler(isr_increment_index_x,          UPDATE_PERIOD,   ISR_INCREMENT_INDEX_X, FALSE); // Initialize ISRs to a fast rate so that the countdown is fast until the
+	Reg_Handler(isr_increment_index_y,          UPDATE_PERIOD,   ISR_INCREMENT_INDEX_Y, FALSE); // setting of the next rate by the isr_calculate_and_set_velocity interrupt.
 
-	calculate_and_set_position_x(); // So the function is output without delay
-   	Reg_Handler(calculate_and_set_position_x, g_period_func_x, ISR_INCREMENT_FUNC_X, TRUE);
-   	calculate_and_set_position_y(); // So the function is output without delay
-   	Reg_Handler(calculate_and_set_position_y, g_period_func_y, ISR_INCREMENT_FUNC_Y, TRUE);
+	isr_calculate_and_set_position_x(); // So the function is output without delay
+   	Reg_Handler(isr_calculate_and_set_position_x, g_period_func_x, ISR_INCREMENT_FUNC_X, TRUE);
+   	isr_calculate_and_set_position_y(); // So the function is output without delay
+   	Reg_Handler(isr_calculate_and_set_position_y, g_period_func_y, ISR_INCREMENT_FUNC_Y, TRUE);
 
 
 	xputs(PSTR("INT3 catches a rising edge trigger!\n"));
@@ -167,9 +156,15 @@ int main(void)
     uint8_t     bufTemp[128];
     uint8_t     workingModes;
     uint8_t     rightBufferXLoaded = 0, rightBufferYLoaded = 0;
+    uint16_t	index_frame;
+    uint8_t		index_func_x_read;
+    uint8_t		index_func_y_read;
     uint16_t    index_frame_prev = 999;  //just chosen at random
     uint8_t     index_func_x_read_prev = 199;
     uint8_t     index_func_y_read_prev = 199;
+    uint8_t		filllevel_buf_func_x;
+    uint8_t		filllevel_buf_func_y;
+    uint16_t    x, y;
     
     workingModes = eeprom_read_byte(work_mode);
     
@@ -207,7 +202,7 @@ int main(void)
     init_all();
 
     
-    /* Join xitoa module to uart module */
+    // All the xputs() and xprintf() calls are output via the uart.
     xfunc_out = (void (*)(char))uart_put;
     
     for (i=0; i<RINGBUFFER_LENGTH; i++)
@@ -227,7 +222,10 @@ int main(void)
     
     
     //initializations
-    g_x_initial = g_y_initial = g_x = g_y = 0;
+    ATOMIC_BLOCK(ATOMIC_RESTORESTATE)
+    {
+    	g_x_initial = g_y_initial = g_x = g_y = 0;
+    }
     g_bias_x = g_bias_y = 0;
     g_gain_x = g_gain_y = 0;
     g_mode_x = g_mode_y = 0;
@@ -332,75 +330,98 @@ int main(void)
     // An alternative is to base the switch on the SD config file
     if (workingModes == WORKINGMODE_CONTROLLER)
     {
-        uint8_t msg_buffer[65];
+    	uint8_t i=0;
+        uint8_t msg_buffer[256];
         xputs(PSTR("Current working mode is the Controller mode!\n"));
         
         // Main loop.  Wait for communication from PC over UART
         while(TRUE)
         {
-            if (uart_test())
-            {
-                message_length = fill_Rx_buffer(&msg_buffer[0]);
-                switch(message_length)
-                {
-                    case 1:
-                        handle_message_length_1(&msg_buffer[0]);
-                        break;
-                    case 2:
-                        handle_message_length_2(&msg_buffer[0]);
-                        break;
-                    case 3:
-                        handle_message_length_3(&msg_buffer[0]);
-                        break;
-                    case 4:
-                        handle_message_length_4(&msg_buffer[0]);
-                        break;
-                    case 5:
-                        handle_message_length_5(&msg_buffer[0]);
-                        break;
-                    case 7:
-                        handle_message_length_7(&msg_buffer[0]);
-                        break;
-                    case 62:
-                        handle_message_length_62(&msg_buffer[0]);
-                        break;
-                    case 63:
-                        handle_message_length_63(&msg_buffer[0]);
-                        break;    
-                    default:
-                        i2cMasterSend(0x00, 8, ERROR_CODES[7]);
-                } // switch()
-            } // if (uart_test())
-            
+			ATOMIC_BLOCK(ATOMIC_RESTORESTATE)
+			{
+				if (uart_test())
+				{
+					message_length = fill_Rx_buffer(msg_buffer);
+					switch(message_length)
+					{
+						case 1:
+							handle_message_length_1(msg_buffer);
+							break;
+						case 2:
+							handle_message_length_2(msg_buffer);
+							break;
+						case 3:
+							handle_message_length_3(msg_buffer);
+							break;
+						case 4:
+							handle_message_length_4(msg_buffer);
+							break;
+						case 5:
+							handle_message_length_5(msg_buffer);
+							break;
+						case 7:
+							handle_message_length_7(msg_buffer);
+							break;
+						case 62:
+							handle_message_length_62(msg_buffer);
+							break;
+						case 63:
+							handle_message_length_63(msg_buffer);
+							break;
+						default:
+							xprintf(PSTR("Comm Error: nbytes=%u\n"), message_length);
+							i2cMasterSend(0x00, 8, ERROR_CODES[7]);
+					} // switch()
+				} // if (uart_test())
+			}
             // If running, then update display.
             if (g_b_running)
             {
-            	// Only send out new pattern if the pattern index has changed.
-                if (g_index_frame != index_frame_prev)
+                ATOMIC_BLOCK(ATOMIC_RESTORESTATE)
                 {
-                    index_frame_prev = g_index_frame; //update the 'old' frame number
-                    fetch_and_display_frame(&g_file_pattern, g_x, g_y);
+                	index_frame = g_index_frame;
+                	index_func_x_read = g_index_func_x_read;
+                	index_func_y_read = g_index_func_y_read;
+                    filllevel_buf_func_x = g_filllevel_buf_func_x;
+                    filllevel_buf_func_y = g_filllevel_buf_func_y;
+
                 }
+            	// Only send out new pattern if the pattern index has changed.
+                if (index_frame != index_frame_prev)
+                {
+                    ATOMIC_BLOCK(ATOMIC_RESTORESTATE)
+                    {
+                    	index_frame_prev = index_frame; //update the prev frame number
+                    	x = g_x;
+                    	y = g_y;
+                    }
+                    fetch_and_display_frame(&g_file_pattern, x, y);
+                }
+                else
+                    ATOMIC_BLOCK(ATOMIC_RESTORESTATE)
+                    {
+                		g_display_count = 0;
+                    }
                 
                 //g_filllevel_buf_func_x in word, 2 bytes.
-                if (!g_b_default_func_x && (g_filllevel_buf_func_x <= RINGBUFFER_LENGTH/4) && (g_index_func_x_read != index_func_x_read_prev))
+                if (!g_b_default_func_x && (filllevel_buf_func_x <= RINGBUFFER_LENGTH/4) && (index_func_x_read != index_func_x_read_prev))
                 {                    
-                    index_func_x_read_prev = g_index_func_x_read;
+                    index_func_x_read_prev = index_func_x_read;
                     fetch_block_func_x(&g_file_func_x, FALSE, g_iblock_func_x);
                     g_iblock_func_x = (g_iblock_func_x+1) % g_nblocks_func_x;
-                    //xprintf(PSTR("g_filllevel_buf_func_x=%u, g_index_func_x_read=%u\n"), g_filllevel_buf_func_x, g_index_func_x_read);
+                    //xprintf(PSTR("g_filllevel_buf_func_x=%u, g_index_func_x_read=%u\n"), filllevel_buf_func_x, index_func_x_read);
                 }
 
-                if (!g_b_default_func_y && (g_filllevel_buf_func_y <= RINGBUFFER_LENGTH/4) && (g_index_func_y_read != index_func_y_read_prev))
+                if (!g_b_default_func_y && (filllevel_buf_func_y <= RINGBUFFER_LENGTH/4) && (index_func_y_read != index_func_y_read_prev))
                 {                    
-                    index_func_y_read_prev = g_index_func_y_read;
+                    index_func_y_read_prev = index_func_y_read;
                     fetch_block_func_y(&g_file_func_y, FALSE, g_iblock_func_y);
                     g_iblock_func_y = (g_iblock_func_y + 1)%g_nblocks_func_y;
-                    //xprintf(PSTR("g_filllevel_buf_func_y=%u, g_index_func_y_read=%u\n"), g_filllevel_buf_func_y, g_index_func_y_read);
+                    //xprintf(PSTR("g_filllevel_buf_func_y=%u, g_index_func_y_read=%u\n"), filllevel_buf_func_y, index_func_y_read);
                 }
 
             }
-        }
+        } // end while(TRUE)
     }
     else // else workingModes==WORKINGMODE_PCDUMPING
     {
@@ -408,21 +429,21 @@ int main(void)
         xputs(PSTR("Current working mode is the PC dumping mode!\n"));
 
         // Main loop.  Wait for communication from PC over UART
-        while(1)
+        while(TRUE)
         {
             if (uart_test())
             {
-                message_length = fill_Rx_buffer(&msg_buffer[0]);
+                message_length = fill_Rx_buffer(msg_buffer);
                 switch(message_length)
                 {
                     case 1:  // if length 1, then decode...
-                        handle_message_length_1(&msg_buffer[0]);
+                        handle_message_length_1(msg_buffer);
                         break;
                     //case 2: // if length 2, then decode, could be reset, display num, or change pat
-                    //    handle_message_length_2(&msg_buffer[0]);
+                    //    handle_message_length_2(msg_buffer);
                     //    break;
                     case 50: //
-                        display_dumped_frame(&msg_buffer[0]);
+                        display_dumped_frame(msg_buffer);
                         break;
                     default:            
                         i2cMasterSend(0x00, 8, ERROR_CODES[8]);
@@ -445,20 +466,23 @@ void start_running(void)
     g_b_running = TRUE;
 
     // Set indices to the beginning of the function - useful for putting in a set amount of expansion.
-    g_index_func_x_read = 0;
-    g_index_func_y_read = 0;
-    g_iblock_func_x = 1;
-    g_iblock_func_y = 1;
-    g_display_count = 0;  //clear the display count
+    ATOMIC_BLOCK(ATOMIC_RESTORESTATE)
+    {
+		g_index_func_x_read = 0;
+		g_index_func_y_read = 0;
+		g_iblock_func_x = 1;
+		g_iblock_func_y = 1;
+		g_display_count = 0;  //clear the display count
+    }
 
-    Reg_Handler(calculate_and_set_velocity, UPDATE_PERIOD, ISR_UPDATE_DISPLAY, TRUE);
-    Reg_Handler(increment_index_x,        UPDATE_PERIOD, ISR_INCREMENT_INDEX_X, FALSE); // Initialize the 2 and 3 priority interupts to a fast rate so that
-    Reg_Handler(increment_index_y,        UPDATE_PERIOD, ISR_INCREMENT_INDEX_Y, FALSE); // the countdown is fast until the setting of the next rate
-                                                                                        // by the calculate_and_set_velocity interupt.
-	calculate_and_set_position_x();
-	Reg_Handler(calculate_and_set_position_x, g_period_func_x, ISR_INCREMENT_FUNC_X, TRUE);
-	calculate_and_set_position_y();
-	Reg_Handler(calculate_and_set_position_y, g_period_func_y, ISR_INCREMENT_FUNC_Y, TRUE);
+    Reg_Handler(isr_calculate_and_set_velocity, UPDATE_PERIOD,   ISR_UPDATE_DISPLAY,    TRUE);
+    Reg_Handler(isr_increment_index_x,          UPDATE_PERIOD,   ISR_INCREMENT_INDEX_X, FALSE); // Initialize the 2 and 3 priority interrupts to a fast rate so that
+    Reg_Handler(isr_increment_index_y,          UPDATE_PERIOD,   ISR_INCREMENT_INDEX_Y, FALSE); // the countdown is fast until the setting of the next rate
+                                                                                        		// by the isr_calculate_and_set_velocity() interrupt.
+	isr_calculate_and_set_position_x();
+	Reg_Handler(isr_calculate_and_set_position_x, g_period_func_x, ISR_INCREMENT_FUNC_X, TRUE);
+	isr_calculate_and_set_position_y();
+	Reg_Handler(isr_calculate_and_set_position_y, g_period_func_y, ISR_INCREMENT_FUNC_Y, TRUE);
 
 } // start_running()
 
@@ -467,11 +491,11 @@ void stop_running(void)
 {
     g_b_running = FALSE;
     //turn off the interupts
-    Reg_Handler(calculate_and_set_velocity,      UPDATE_PERIOD,   ISR_UPDATE_DISPLAY, FALSE);
-    Reg_Handler(increment_index_x,             UPDATE_PERIOD,   ISR_INCREMENT_INDEX_X, FALSE);
-    Reg_Handler(increment_index_y,             UPDATE_PERIOD,   ISR_INCREMENT_INDEX_Y, FALSE);
-    Reg_Handler(calculate_and_set_position_x, g_period_func_x, ISR_INCREMENT_FUNC_X, FALSE);
-    Reg_Handler(calculate_and_set_position_y, g_period_func_y, ISR_INCREMENT_FUNC_Y, FALSE);
+    Reg_Handler(isr_calculate_and_set_velocity,    UPDATE_PERIOD,  ISR_UPDATE_DISPLAY, FALSE);
+    Reg_Handler(isr_increment_index_x,             UPDATE_PERIOD,  ISR_INCREMENT_INDEX_X, FALSE);
+    Reg_Handler(isr_increment_index_y,             UPDATE_PERIOD,  ISR_INCREMENT_INDEX_Y, FALSE);
+    Reg_Handler(isr_calculate_and_set_position_x, g_period_func_x, ISR_INCREMENT_FUNC_X, FALSE);
+    Reg_Handler(isr_calculate_and_set_position_y, g_period_func_y, ISR_INCREMENT_FUNC_Y, FALSE);
 }
 
 void handle_message_length_1(uint8_t *msg_buffer)
@@ -490,7 +514,7 @@ void handle_message_length_1(uint8_t *msg_buffer)
             
         case MSG_1_START_W_TRIG:  //Start display & trigger - same as regular, but this also does trigger
         	start_running();
-        	Reg_Handler(toggle_trigger, (uint32_t)OVERFLOW_PERIOD/g_trigger_rate, ISR_TOGGLE_TRIGGER, TRUE); // Turn on the trigger toggler
+        	Reg_Handler(isr_toggle_trigger, (uint32_t)OVERFLOW_PERIOD/g_trigger_rate, ISR_TOGGLE_TRIGGER, TRUE); // Turn on the trigger toggler
             break;
 
         case MSG_1_STOP: //stop display
@@ -503,7 +527,7 @@ void handle_message_length_1(uint8_t *msg_buffer)
             
         case MSG_1_STOP_W_TRIG: //stop display & trigger - same as regular, but this also does trigger
         	stop_running();
-            Reg_Handler(toggle_trigger, (uint32_t)OVERFLOW_PERIOD/g_trigger_rate, ISR_TOGGLE_TRIGGER, FALSE); // Turn off the trigger toggler
+            Reg_Handler(isr_toggle_trigger, (uint32_t)OVERFLOW_PERIOD/g_trigger_rate, ISR_TOGGLE_TRIGGER, FALSE); // Turn off the trigger toggler
             digitalWrite(DIO_TRIGGEROUT,LOW);    //set the trigger output to low
             break;
 
@@ -576,7 +600,7 @@ void handle_message_length_1(uint8_t *msg_buffer)
             g_b_quiet_mode = TRUE;
             break;
             
-        case MSG_1_QUIET_MODE_OFF:  // turn off quiet_mode, essage sent out
+        case MSG_1_QUIET_MODE_OFF:  // turn off quiet_mode, message sent out
             g_b_quiet_mode = FALSE;
             break;
               
@@ -797,24 +821,31 @@ void handle_message_length_4(uint8_t *msg_buffer)
 
 void handle_message_length_5(uint8_t *msg_buffer)
 {
+	uint16_t	x, y;
+	uint16_t	index_frame;
     switch(msg_buffer[0])
     {
         case MSG_5_SET_POSITION:   //put in a bunch of type casts, because of mysterious error dealing with frame index above 128.
-            //'set_position'
-            g_x = (uint8_t)msg_buffer[1] + (256*(uint8_t)msg_buffer[2]);
-            g_y = (uint8_t)msg_buffer[3] + (256*(uint8_t)msg_buffer[4]);
-            
-            g_x_initial = g_x; // these only used during position func. control mode, but
-            g_y_initial = g_y; //update here should not slow things down much and no need for sep. function.
-            g_index_frame = FRAMEFROMXY(g_x, g_y);
-            g_display_count = 0;  //clear the display count
+            ATOMIC_BLOCK(ATOMIC_RESTORESTATE)
+            {
+                g_x = (uint8_t)msg_buffer[1] + (256*(uint8_t)msg_buffer[2]);
+                g_y = (uint8_t)msg_buffer[3] + (256*(uint8_t)msg_buffer[4]);
+				g_x_initial = g_x; // these only used during position func. control mode, but
+				g_y_initial = g_y; //update here should not slow things down much and no need for sep. function.
+				g_index_frame = FRAMEFROMXY(g_x, g_y);
+				g_display_count = 0;  //clear the display count
+
+            	x = g_x;
+            	y = g_y;
+            	index_frame = g_index_frame;
+            }
             if (!g_b_quiet_mode)
-                xprintf(PSTR("set_position: g_x= %u,  g_y= %u, and g_index_frame= %u\n"), g_x, g_y, g_index_frame);
+            	xprintf(PSTR("set_position: g_x= %u,  g_y= %u, and g_index_frame= %u\n"), x, y, index_frame);
 
 			if (usePreloadedPattern == 1)
-				display_preload_frame(g_index_frame, g_x, g_y);
+				display_preload_frame(index_frame, x, y);
 			else
-                fetch_and_display_frame(&g_file_pattern, g_x, g_y);
+                fetch_and_display_frame(&g_file_pattern, x, y);
             break;
 
         case MSG_5_SEND_GAIN_BIAS: // The version of the command with signed 8 bit arguments.
@@ -944,8 +975,8 @@ void handle_message_length_63(uint8_t *msg_buffer)
 
 void display_dumped_frame (uint8_t *msg_buffer)
 {
-    uint8_t  panel_index;
-    uint16_t buffer_index;
+    uint8_t  index_panel;
+    uint16_t index_buffer;
     uint16_t x_dac_val, y_dac_val;
     uint8_t  grayscale;
 
@@ -967,14 +998,17 @@ void display_dumped_frame (uint8_t *msg_buffer)
     else
         g_bytes_per_panel = grayscale*8;
   
-    buffer_index = 7;
-    g_display_count = 0;  //clear the display count
+    index_buffer = 7;
+    ATOMIC_BLOCK(ATOMIC_RESTORESTATE)
+    {
+    	g_display_count = 0;  //clear the display count
+    }
     digitalWrite(DIO_FRAMEBUSY, HIGH); // set line high at beginning of frame write
     
-    for (panel_index = 1; panel_index <= g_num_panels; panel_index++)
+    for (index_panel = 1; index_panel <= g_num_panels; index_panel++)
     {
-        i2cMasterSend(panel_index, g_bytes_per_panel, &msg_buffer[buffer_index]);
-        buffer_index = buffer_index + g_bytes_per_panel;
+        i2cMasterSend(index_panel, g_bytes_per_panel, &msg_buffer[index_buffer]);
+        index_buffer = index_buffer + g_bytes_per_panel;
     }
     analogWrite(0, x_dac_val); // make it a value in the range 0 - 32767 (0V - 10V)
     analogWrite(1, y_dac_val);  // make it a value in the range 0 - 32767 (0V - 10V)
@@ -985,13 +1019,13 @@ void display_dumped_frame (uint8_t *msg_buffer)
 void display_preload_frame(uint16_t index_frame, uint16_t Xindex, uint16_t Yindex)
 {
     // this function will fetch the current frame from the SD-card and display it.
-    // pass in f_num instead of using global g_index_frame to ensure that the value of
+    // pass in index_frame instead of using global g_index_frame to ensure that the value of
     // g_index_frame does not change during this function's run
-    // suppose f_num is from 0 to (n_num * g_n_y - 1)
+    // suppose index_frame is from 0 to (n_num * g_n_y - 1)
     uint16_t X_dac_val, Y_dac_val;
 	uint8_t CMD[2];
 
-	//when preload pattern to panels (super fast mode), we update frame and analog output in this function in stead of
+	//when preload pattern to panels (super fast mode), we update frame and analog output in this function instead of
 	//in fetch_display_frame because this fuction is ISR and has a higher priority than fetch_display_frame called by 
 	//main funciton. In this way, we can keep update frame during f_read to in order to update function data 
 	digitalWrite(1, HIGH); 
@@ -1016,39 +1050,47 @@ void display_preload_frame(uint16_t index_frame, uint16_t Xindex, uint16_t Yinde
 void fetch_and_display_frame(FIL *pFile, uint16_t x, uint16_t y)
 {
 	uint16_t  index_frame;
-    uint8_t   j, panel_index;
+    uint8_t   index_panel;
+    uint16_t  nbytes_read;
+    uint16_t  nbytes_per_frame;
+    uint8_t   nblocks_per_frame;
+    uint8_t	  display_count;
     uint8_t   packet_sent;
     uint8_t   grayscale[4];
     uint8_t   *FLASH;
-    uint16_t  nbytes_per_frame;
-    uint16_t  nbytes_read;
     uint32_t  offset;
     FRESULT   fresult;
-    uint16_t  dac_x, dac_y;
-    uint8_t   block_per_frame;
-    uint8_t   tempVal;
-    uint8_t   bitIndex;
-    uint8_t   arrayIndex;
     
 
     index_frame = FRAMEFROMXY(x, y);
     if (index_frame < g_n_frames)
     {
 		digitalWrite(DIO_FRAMEBUSY, HIGH); // Set line high at start of frame write
+        ATOMIC_BLOCK(ATOMIC_RESTORESTATE)
+        {
+        	display_count = g_display_count;
+        }
 		// If count gets bigger than 1 -> frame skipped
-		if (g_display_count > 1)
+		if (display_count > 1)
+		{
 			ledToggle(1);
-		g_display_count = 0;
+			if (!g_b_quiet_mode)
+				xprintf(PSTR("Frames skipped: %d, index_frame=%d, x=%d, y=%d, g_n_frames=%d\n"), display_count, index_frame, x, y, g_n_frames);
+		}
+        ATOMIC_BLOCK(ATOMIC_RESTORESTATE)
+        {
+        	g_display_count = 0;
+        }
 		nbytes_per_frame = g_num_panels * g_bytes_per_panel;
 
 		if (nbytes_per_frame%512 != 0)
-			block_per_frame = nbytes_per_frame/512 + 1;
+			nblocks_per_frame = nbytes_per_frame/512 + 1;
 		else
-			block_per_frame = nbytes_per_frame/512;  //for gs=4 and rc=0
+			nblocks_per_frame = nbytes_per_frame/512;  //for gs=4 and rc=0
 
 
 		uint8_t  frameBuff[nbytes_per_frame];
-		offset = NBYTES_HEADER + (uint32_t)index_frame * 512 * block_per_frame;
+		offset = NBYTES_HEADER + (uint32_t)index_frame * 512 * nblocks_per_frame;
 
 		fresult = f_lseek(pFile, offset);
 		if ((fresult == FR_OK) && (pFile->fptr == offset))
@@ -1057,20 +1099,25 @@ void fetch_and_display_frame(FIL *pFile, uint16_t x, uint16_t y)
 			if ((fresult == FR_OK) && (nbytes_read == nbytes_per_frame))
 			{
 
-				for (panel_index=1; panel_index <= g_num_panels; panel_index++)
+				for (index_panel=1; index_panel <= g_num_panels; index_panel++)
 				{
-					FLASH = &frameBuff[(panel_index-1)*g_bytes_per_panel]; // Point to the proper data.
+					FLASH = &frameBuff[(index_panel-1)*g_bytes_per_panel]; // Point to the proper data.
 
 					packet_sent = FALSE; //used with compression to simplify conditionals.
 					if (g_ident_compress)
 					{
 						if (g_bytes_per_panel == 8)
 						{
-							if( (FLASH[0] == FLASH[1])&&(FLASH[2] == FLASH[3])&&(FLASH[4] == FLASH[5])&&(FLASH[6] == FLASH[7]) )
+							if( (FLASH[0] == FLASH[1]) &&
+								(FLASH[2] == FLASH[3]) &&
+								(FLASH[4] == FLASH[5]) &&
+								(FLASH[6] == FLASH[7]) )
 							{
-								if( (FLASH[1] == FLASH[2])&&(FLASH[3] == FLASH[4])&&(FLASH[5] == FLASH[6]) )
+								if( (FLASH[1] == FLASH[2]) &&
+									(FLASH[3] == FLASH[4]) &&
+									(FLASH[5] == FLASH[6]) )
 								{
-									i2cMasterSend(panel_index, 1, &FLASH[0]); //send a 1 byte packet with the correct row_compressed value.
+									i2cMasterSend(index_panel, 1, FLASH); //send a 1 byte packet with the correct row_compressed value.
 									packet_sent = TRUE;
 								} //end of second round of comparisons
 							} //end of first round of byte comparisons
@@ -1078,16 +1125,37 @@ void fetch_and_display_frame(FIL *pFile, uint16_t x, uint16_t y)
 
 						if (g_bytes_per_panel == 24)
 						{
-							if( (FLASH[0] == FLASH[1])&&(FLASH[2] == FLASH[3])&&(FLASH[4] == FLASH[5])&&(FLASH[6] == FLASH[7]) ){
-								if( (FLASH[1] == FLASH[2])&&(FLASH[3] == FLASH[4])&&(FLASH[5] == FLASH[6]) ){
-									if( (FLASH[8+0] == FLASH[8+1])&&(FLASH[8+2] == FLASH[8+3])&&(FLASH[8+4] == FLASH[8+5])&&(FLASH[8+6] == FLASH[8+7]) ){
-										if( (FLASH[8+1] == FLASH[8+2])&&(FLASH[8+3] == FLASH[8+4])&&(FLASH[8+5] == FLASH[8+6]) ){
-											if( (FLASH[16+0] == FLASH[16+1])&&(FLASH[16+2] == FLASH[16+3])&&(FLASH[16+4] == FLASH[16+5])&&(FLASH[16+6] == FLASH[16+7]) ){
-												if( (FLASH[16+1] == FLASH[16+2])&&(FLASH[16+3] == FLASH[16+4])&&(FLASH[16+5] == FLASH[16+6]) ){
+							if( (FLASH[0] == FLASH[1]) &&
+								(FLASH[2] == FLASH[3]) &&
+								(FLASH[4] == FLASH[5]) &&
+								(FLASH[6] == FLASH[7]) )
+							{
+								if( (FLASH[1] == FLASH[2]) &&
+									(FLASH[3] == FLASH[4]) &&
+									(FLASH[5] == FLASH[6]) )
+								{
+									if( (FLASH[8+0] == FLASH[8+1]) &&
+										(FLASH[8+2] == FLASH[8+3]) &&
+										(FLASH[8+4] == FLASH[8+5]) &&
+										(FLASH[8+6] == FLASH[8+7]) )
+									{
+										if( (FLASH[8+1] == FLASH[8+2]) &&
+											(FLASH[8+3] == FLASH[8+4]) &&
+											(FLASH[8+5] == FLASH[8+6]) )
+										{
+											if( (FLASH[16+0] == FLASH[16+1]) &&
+												(FLASH[16+2] == FLASH[16+3]) &&
+												(FLASH[16+4] == FLASH[16+5]) &&
+												(FLASH[16+6] == FLASH[16+7]) )
+											{
+												if( (FLASH[16+1] == FLASH[16+2]) &&
+													(FLASH[16+3] == FLASH[16+4]) &&
+													(FLASH[16+5] == FLASH[16+6]) )
+												{
 													grayscale[0] = FLASH[0];
 													grayscale[1] = FLASH[8];
 													grayscale[2] = FLASH[16];
-													i2cMasterSend(panel_index, 3, &grayscale[0]); //send a 3 byte packet with the correct row_compressed value.
+													i2cMasterSend(index_panel, 3, grayscale); //send a 3 byte packet with the correct row_compressed value.
 													packet_sent = TRUE;
 												} //end of sixth round of comparisons
 											} //end of fifth round of comparisons
@@ -1097,20 +1165,49 @@ void fetch_and_display_frame(FIL *pFile, uint16_t x, uint16_t y)
 							} //end of first round of byte comparisons
 						} // end of check if g_bytes_per_panel is 24
 
-						if (g_bytes_per_panel == 32){
-							if( (FLASH[0] == FLASH[1])&&(FLASH[2] == FLASH[3])&&(FLASH[4] == FLASH[5])&&(FLASH[6] == FLASH[7]) ){
-								if( (FLASH[1] == FLASH[2])&&(FLASH[3] == FLASH[4])&&(FLASH[5] == FLASH[6]) ){
-									if( (FLASH[8+0] == FLASH[8+1])&&(FLASH[8+2] == FLASH[8+3])&&(FLASH[8+4] == FLASH[8+5])&&(FLASH[8+6] == FLASH[8+7]) ){
-										if( (FLASH[8+1] == FLASH[8+2])&&(FLASH[8+3] == FLASH[8+4])&&(FLASH[8+5] == FLASH[8+6]) ){
-											if( (FLASH[16+0] == FLASH[16+1])&&(FLASH[16+2] == FLASH[16+3])&&(FLASH[16+4] == FLASH[16+5])&&(FLASH[16+6] == FLASH[16+7]) ){
-												if( (FLASH[16+1] == FLASH[16+2])&&(FLASH[16+3] == FLASH[16+4])&&(FLASH[16+5] == FLASH[16+6]) ){
-													if( (FLASH[24+0] == FLASH[24+1])&&(FLASH[24+2] == FLASH[24+3])&&(FLASH[24+4] == FLASH[24+5])&&(FLASH[24+6] == FLASH[24+7]) ){
-														if( (FLASH[24+1] == FLASH[24+2])&&(FLASH[24+3] == FLASH[24+4])&&(FLASH[24+5] == FLASH[24+6]) ){
+						if (g_bytes_per_panel == 32)
+						{
+							if( (FLASH[0] == FLASH[1]) &&
+								(FLASH[2] == FLASH[3]) &&
+								(FLASH[4] == FLASH[5]) &&
+								(FLASH[6] == FLASH[7]) )
+							{
+								if( (FLASH[1] == FLASH[2]) &&
+									(FLASH[3] == FLASH[4]) &&
+									(FLASH[5] == FLASH[6]) )
+								{
+									if( (FLASH[8+0] == FLASH[8+1]) &&
+										(FLASH[8+2] == FLASH[8+3]) &&
+										(FLASH[8+4] == FLASH[8+5]) &&
+										(FLASH[8+6] == FLASH[8+7]) )
+									{
+										if( (FLASH[8+1] == FLASH[8+2]) &&
+											(FLASH[8+3] == FLASH[8+4]) &&
+											(FLASH[8+5] == FLASH[8+6]) )
+										{
+											if( (FLASH[16+0] == FLASH[16+1]) &&
+												(FLASH[16+2] == FLASH[16+3]) &&
+												(FLASH[16+4] == FLASH[16+5]) &&
+												(FLASH[16+6] == FLASH[16+7]) )
+											{
+												if( (FLASH[16+1] == FLASH[16+2]) &&
+													(FLASH[16+3] == FLASH[16+4]) &&
+													(FLASH[16+5] == FLASH[16+6]) )
+												{
+													if( (FLASH[24+0] == FLASH[24+1]) &&
+														(FLASH[24+2] == FLASH[24+3]) &&
+														(FLASH[24+4] == FLASH[24+5]) &&
+														(FLASH[24+6] == FLASH[24+7]) )
+													{
+														if( (FLASH[24+1] == FLASH[24+2]) &&
+															(FLASH[24+3] == FLASH[24+4]) &&
+															(FLASH[24+5] == FLASH[24+6]) )
+														{
 															grayscale[0] = FLASH[0];
 															grayscale[1] = FLASH[8];
 															grayscale[2] = FLASH[16];
 															grayscale[3] = FLASH[24];
-															i2cMasterSend(panel_index, 4, &grayscale[0]); //send a 4 byte packet with the correct row_compressed value.
+															i2cMasterSend(index_panel, 4, grayscale); //send a 4 byte packet with the correct row_compressed value.
 															packet_sent = TRUE;
 														}//end
 													}//end
@@ -1125,7 +1222,7 @@ void fetch_and_display_frame(FIL *pFile, uint16_t x, uint16_t y)
 
 					//above conditionals rejected sending a simple pattern patch
 					if (!packet_sent)
-						i2cMasterSend(panel_index, g_bytes_per_panel, &FLASH[0]);
+						i2cMasterSend(index_panel, g_bytes_per_panel, FLASH);
 
 				} //end of for all panels loop
 			}
@@ -1133,7 +1230,7 @@ void fetch_and_display_frame(FIL *pFile, uint16_t x, uint16_t y)
 			{
 				if (!g_b_quiet_mode)
 				{
-					xputs(PSTR("Error in reading file in fetch_and_display_frame!\n"));
+					xputs(PSTR("Error reading file in fetch_and_display_frame!\n"));
 					xprintf(PSTR("fresult = %u, index_frame= %u, nbytes_read= %u\n"), fresult, index_frame, nbytes_read);
 				}
 			}
@@ -1150,11 +1247,13 @@ void fetch_and_display_frame(FIL *pFile, uint16_t x, uint16_t y)
 		// Update analog outs
 		if (g_mode_x != MODE_POS_DEBUG)
 		{
+		    uint16_t  dac_x;
 			dac_x = ((uint32_t)x + 1)*32767/g_n_x;
 			analogWrite(0, dac_x); // make it a value in the range 0 - 32767 (0 - 10V)
 		}
 		if (g_mode_y != MODE_POS_DEBUG)
 		{
+		    uint16_t  dac_y;
 			dac_y = ((uint32_t)y + 1)*32767/g_n_y;
 			analogWrite(1, dac_y); // make it a value in the range 0 - 32767 (0 - 10V)
 		}
@@ -1163,7 +1262,11 @@ void fetch_and_display_frame(FIL *pFile, uint16_t x, uint16_t y)
 		// Update the output lines for quadrant-type learning patterns.
 		if (g_b_laseractive)
 		{
-			arrayIndex = x/8;  // find the index in g_laserpattern array for x
+		    uint8_t   arrayIndex;
+		    uint8_t   bitIndex;
+		    uint8_t   tempVal;
+
+		    arrayIndex = x/8;  // find the index in g_laserpattern array for x
 			bitIndex = x - arrayIndex*8;  // find the bit index in a g_laserpattern byte for x
 
 			tempVal = g_laserpattern[arrayIndex];
@@ -1177,7 +1280,11 @@ void fetch_and_display_frame(FIL *pFile, uint16_t x, uint16_t y)
 		digitalWrite(DIO_FRAMEBUSY, LOW); // set line low at end of frame write
     }
     else
+    {
     	ledToggle(3); // Frame index is invalid, i.e. out of range.
+		if (!g_b_quiet_mode)
+			xprintf(PSTR("Frame index invalid.  index_frame=%d, x=%d, y=%d, g_n_frames=%d\n"), index_frame, x, y, g_n_frames);
+    }
     
 } // fetch_and_display_frame()
 
@@ -1188,27 +1295,27 @@ void fetch_and_display_frame(FIL *pFile, uint16_t x, uint16_t y)
 void set_isr_rates(int16_t xRate, int16_t yRate)
 {
     if (xRate > 0)
-        Update_Reg_Handler(increment_index_x, (uint32_t)OVERFLOW_PERIOD/abs(xRate), ISR_INCREMENT_INDEX_X, TRUE);
+        Update_Reg_Handler(isr_increment_index_x, (uint32_t)OVERFLOW_PERIOD/abs(xRate), ISR_INCREMENT_INDEX_X, TRUE);
     else if (xRate < 0)
-        Update_Reg_Handler(decrement_index_x, (uint32_t)OVERFLOW_PERIOD/abs(xRate), ISR_INCREMENT_INDEX_X, TRUE);
+        Update_Reg_Handler(isr_decrement_index_x, (uint32_t)OVERFLOW_PERIOD/abs(xRate), ISR_INCREMENT_INDEX_X, TRUE);
     else // xRate == 0
-        Update_Reg_Handler(decrement_index_x, UPDATE_PERIOD, ISR_INCREMENT_INDEX_X, FALSE);
+        Update_Reg_Handler(isr_decrement_index_x,                        UPDATE_PERIOD, ISR_INCREMENT_INDEX_X, FALSE);
 
 
     if (yRate > 0)
-        Update_Reg_Handler(increment_index_y, (uint32_t)OVERFLOW_PERIOD/abs(yRate), ISR_INCREMENT_INDEX_Y, TRUE);
+        Update_Reg_Handler(isr_increment_index_y, (uint32_t)OVERFLOW_PERIOD/abs(yRate), ISR_INCREMENT_INDEX_Y, TRUE);
     else if (yRate < 0)
-        Update_Reg_Handler(decrement_index_y, (uint32_t)OVERFLOW_PERIOD/abs(yRate), ISR_INCREMENT_INDEX_Y, TRUE);
+        Update_Reg_Handler(isr_decrement_index_y, (uint32_t)OVERFLOW_PERIOD/abs(yRate), ISR_INCREMENT_INDEX_Y, TRUE);
     else // yRate == 0
-        Update_Reg_Handler(decrement_index_y, UPDATE_PERIOD, ISR_INCREMENT_INDEX_Y, FALSE);
+        Update_Reg_Handler(isr_decrement_index_y,                        UPDATE_PERIOD, ISR_INCREMENT_INDEX_Y, FALSE);
 
 } // set_isr_rates()
 
 
-// calculate_and_set_velocity()
+// isr_calculate_and_set_velocity()
 // This function calculates and sets the x,y rates.
 //
-void calculate_and_set_velocity(void)
+void isr_calculate_and_set_velocity(void)
 {
 	int8_t         i;
     int16_t        xRate = 0;
@@ -1233,8 +1340,8 @@ void calculate_and_set_velocity(void)
     switch(g_mode_x)
     {
         case MODE_VEL_OPENLOOP:   // Open loop - use function generator to set x rate
-            src = g_buf_func_x[g_index_func_x_read];
-            xRate = (int16_t)((int32_t)g_gain_x*(int32_t)src/10) + 5*g_bias_x/2;
+			src = g_buf_func_x[g_index_func_x_read];
+			xRate = (int16_t)((int32_t)g_gain_x*(int32_t)src/10) + 5*g_bias_x/2;
             break;
 
         case MODE_VEL_CLOSEDLOOP: // Closed loop, use CH0 to set x rate.
@@ -1291,8 +1398,8 @@ void calculate_and_set_velocity(void)
     switch(g_mode_y)
     {
         case MODE_VEL_OPENLOOP:   // open loop - use function generator to set y rate
-            src = g_buf_func_y[g_index_func_y_read];
-            yRate = (int16_t)((int32_t)g_gain_y*(int32_t)src/10) + 5*g_bias_y/2;
+			src = g_buf_func_y[g_index_func_y_read];
+			yRate = (int16_t)((int32_t)g_gain_y*(int32_t)src/10) + 5*g_bias_y/2;
             break;
 
 
@@ -1351,21 +1458,21 @@ void calculate_and_set_velocity(void)
     if (!g_b_running)
         xRate = yRate = 0;
     
-    g_b_xrate_greater_yrate = (xRate >= yRate);
-    set_isr_rates(xRate, yRate);
-} // calculate_and_set_velocity()
+	g_b_xrate_greater_yrate = (xRate >= yRate);
 
+	set_isr_rates(xRate, yRate);
+} // isr_calculate_and_set_velocity()
 
-// calculate_and_set_position_x()
+// isr_calculate_and_set_position_x()
 // Calculates and sets the x position.
 //
-void calculate_and_set_position_x(void)
+void isr_calculate_and_set_position_x(void)
 {
 	int8_t   i;
     int32_t  adc[4]={0,0,0,0};
     int16_t  dac_x;
     int16_t  x_tmp;
-    int32_t  x;
+    int32_t  x32;
     int32_t  adc_x;
 
 
@@ -1417,29 +1524,29 @@ void calculate_and_set_position_x(void)
    	                    (int32_t)g_custom_a_x[3] * (adc[3] - (int32_t)g_x_adc_max/2) / 10;
 
             	 // Change the scale from (-adcmax/2,+adcmax/2) to (0,xmax).
-                x = (((int32_t)adc_x * (int32_t)g_n_x / (int32_t)g_x_adc_max) + (int32_t)g_n_x);
+                x32 = (((int32_t)adc_x * (int32_t)g_n_x / (int32_t)g_x_adc_max) + (int32_t)g_n_x);
 
                 // Add the functions.
-                x += (int32_t)g_custom_a_x[4] * (int32_t)g_buf_func_x[g_index_func_x_read] / 10;
-                x += (int32_t)g_custom_a_x[5] * (int32_t)g_buf_func_y[g_index_func_y_read] / 10;
+                x32 += (int32_t)g_custom_a_x[4] * (int32_t)g_buf_func_x[g_index_func_x_read] / 10;
+                x32 += (int32_t)g_custom_a_x[5] * (int32_t)g_buf_func_y[g_index_func_y_read] / 10;
 
                 // Output.
-                g_x = (uint16_t)((x % (int32_t)g_n_x) & 0xFFFF);
+                g_x = (uint16_t)((x32 % (int32_t)g_n_x) & 0xFFFF);
                 g_index_frame = FRAMEFROMXY(g_x, g_y);
             	break;
 
         }
     }
     else
-        xputs(PSTR("Function buffer for x is empty\n"));
+        xputs(PSTR("FuncX buffer is empty\n"));
 
-} // calculate_and_set_position_x()
+} // isr_calculate_and_set_position_x()
 
 
-// calculate_and_set_position_y()
+// isr_calculate_and_set_position_y()
 // Calculates and sets the x position.
 //
-void calculate_and_set_position_y(void)
+void isr_calculate_and_set_position_y(void)
 {
 	int8_t   i;
     int32_t  adc[4]={0,0,0,0};
@@ -1511,64 +1618,62 @@ void calculate_and_set_position_y(void)
         }
     }
     else
-        xputs(PSTR("Function buffer for y is empty\n"));
+        xputs(PSTR("FuncY buffer is empty\n"));
 
-} // calculate_and_set_position_y()
+} // isr_calculate_and_set_position_y()
 
 
-void increment_index_x(void)
+void isr_increment_index_x(void)
 {
-    
-    g_x++;
-    g_x %= g_n_x;
-    
-    g_index_frame = FRAMEFROMXY(g_x, g_y);
-    
-    if (g_b_xrate_greater_yrate)
-    	g_display_count++;
+	g_x++;
+	g_x %= g_n_x;
+
+	g_index_frame = FRAMEFROMXY(g_x, g_y);
+
+	if (g_b_xrate_greater_yrate)
+		g_display_count++;
 }
 
 
-void increment_index_y(void)
+void isr_increment_index_y(void)
 {
-    g_y++;
-    g_y %= g_n_y;
-    
-    g_index_frame = FRAMEFROMXY(g_x, g_y);
-    
-    if (!g_b_xrate_greater_yrate)
-    	g_display_count++;
+	g_y++;
+	g_y %= g_n_y;
+
+	g_index_frame = FRAMEFROMXY(g_x, g_y);
+
+	if (!g_b_xrate_greater_yrate)
+		g_display_count++;
 }
 
 
-void decrement_index_x(void)
+void isr_decrement_index_x(void)
 {
-    
-    if (g_x <= 0)    //just to be safe, use less than
-        g_x = g_n_x - 1;    //but these are unsigned
-    else
-        g_x--;
-    
-    g_index_frame = FRAMEFROMXY(g_x, g_y);
-    if (g_b_xrate_greater_yrate)
-    	g_display_count++;
+	if (g_x <= 0)    //just to be safe, use less than
+		g_x = g_n_x - 1;    //but these are unsigned
+	else
+		g_x--;
+
+	g_index_frame = FRAMEFROMXY(g_x, g_y);
+	if (g_b_xrate_greater_yrate)
+		g_display_count++;
 }
 
 
-void decrement_index_y(void)
+void isr_decrement_index_y(void)
 {
-    if (g_y <= 0)    //just to be safe, use less than
-        g_y = g_n_y - 1;    //but these are unsigned
-    else
-        g_y--;
-    
-    g_index_frame = FRAMEFROMXY(g_x, g_y);
-    if (!g_b_xrate_greater_yrate)
-    	g_display_count++;
+	if (g_y <= 0)    //just to be safe, use less than
+		g_y = g_n_y - 1;    //but these are unsigned
+	else
+		g_y--;
+
+	g_index_frame = FRAMEFROMXY(g_x, g_y);
+	if (!g_b_xrate_greater_yrate)
+		g_display_count++;
 }
 
 
-void toggle_trigger(void)
+void isr_toggle_trigger(void)
 {
     digitalToggle(3); //toggle digital 3 to trigger camera
 }
@@ -1582,6 +1687,7 @@ void set_pattern(uint8_t pat_num)
     uint8_t        bufHeader[NBYTES_HEADER];
     uint8_t        res;
     uint8_t        grayscale;
+    uint16_t		x, y;
     
     if (pat_num < 1000)
         sprintf(str, "pat%04d.pat\0", pat_num);
@@ -1618,17 +1724,23 @@ void set_pattern(uint8_t pat_num)
                 g_row_compress = FALSE;
                 g_bytes_per_panel = grayscale * 8;
             }
-            g_x = g_y = 0;
-            g_index_frame = 0;
-            g_b_running = FALSE;
-            g_display_count = 0;  //clear the display count
+            ATOMIC_BLOCK(ATOMIC_RESTORESTATE)
+            {
+				g_x = g_y = 0;
+				g_index_frame = 0;
+				g_b_running = FALSE;
+				g_display_count = 0;  //clear the display count
+
+				x = g_x;
+				y = g_y;
+            }
             if (!g_b_quiet_mode)
             {
                 xprintf(PSTR("Setting pattern %u:\n"), pat_num);
                 xprintf(PSTR("  g_n_x = %u\n  g_n_y = %u\n  g_num_panels = %u\n  grayscale = %u\n row_compression = %u\n"),
                         g_n_x, g_n_y, g_num_panels, grayscale, g_row_compress);
             }
-            fetch_and_display_frame(&g_file_pattern, g_x, g_y);
+            fetch_and_display_frame(&g_file_pattern, x, y);
         }
         else
         	xputs(PSTR("Error reading in pattern file\n"));
@@ -1684,24 +1796,34 @@ void set_hwConfig(uint8_t config_num)
 // this function assumes that a pattern has been set
 void benchmark_pattern(void)
 {
-    uint16_t x, y;
+    uint16_t frame_ind;
     uint32_t bench_time;
     uint16_t frame_rate;
+    uint16_t	x, y;
     
     g_b_running = FALSE;
     
     timer_coarse_tic();
     
-    for (y=0; y<g_n_y; y++)
-        for (x=0; x<g_n_x; x++)
-            fetch_and_display_frame(&g_file_pattern, x, y);
+    for(frame_ind = 0; frame_ind < g_n_frames; frame_ind++)
+    {
+        ATOMIC_BLOCK(ATOMIC_RESTORESTATE)
+        {
+    		x = g_x;
+    		y = g_y;
+        }
+        fetch_and_display_frame(&g_file_pattern, x, y);
+    }
     
     bench_time = timer_coarse_toc();
     frame_rate = ((uint32_t)g_n_frames*1000)/bench_time;
     xprintf(PSTR(" bench_time = %lu ms, frame_rate = %u\n"), bench_time, frame_rate);
 	//reset index_x and g_y
-	g_x=0;
-	g_y=0;
+    ATOMIC_BLOCK(ATOMIC_RESTORESTATE)
+    {
+		g_x=0;
+		g_y=0;
+    }
 } // benchmark_pattern()
 
 
@@ -1775,7 +1897,7 @@ void set_default_func(uint8_t channel)
             if (!g_b_quiet_mode)
                 xputs(PSTR("Setting default function for X.\n"));
 
-            //Reg_Handler(calculate_and_set_position_x, g_period_func_x, ISR_INCREMENT_FUNC_X, FALSE);// disable ISR
+            //Reg_Handler(isr_calculate_and_set_position_x, g_period_func_x, ISR_INCREMENT_FUNC_X, FALSE);// disable ISR
             g_id_func_x = 0;
             g_b_default_func_x = TRUE;
             g_nbytes_func_x = RINGBUFFER_LENGTH;
@@ -1783,17 +1905,20 @@ void set_default_func(uint8_t channel)
             for (i=0; i<RINGBUFFER_LENGTH; i++)
                 g_buf_func_x[i] = 10;
 
-            g_index_func_x_read = 0;
-            g_filllevel_buf_func_x = RINGBUFFER_LENGTH;
+            ATOMIC_BLOCK(ATOMIC_RESTORESTATE)
+            {
+            	g_index_func_x_read = 0;
+                g_filllevel_buf_func_x = RINGBUFFER_LENGTH;
+            }
             g_nblocks_func_x = 1;
             g_nbytes_final_block_x = 0;
-            //Reg_Handler(calculate_and_set_position_x, g_period_func_x, ISR_INCREMENT_FUNC_X, TRUE);// enable ISR
+            //Reg_Handler(isr_calculate_and_set_position_x, g_period_func_x, ISR_INCREMENT_FUNC_X, TRUE);// enable ISR
             break;
         case CHANNEL_Y:
             if (!g_b_quiet_mode)
                 xputs(PSTR("Setting default function for Y.\n"));
 
-            //Reg_Handler(calculate_and_set_position_y, g_period_func_y, ISR_INCREMENT_FUNC_Y, FALSE);// disable ISR
+            //Reg_Handler(isr_calculate_and_set_position_y, g_period_func_y, ISR_INCREMENT_FUNC_Y, FALSE);// disable ISR
             g_id_func_y = 0;
             g_b_default_func_y = TRUE;
             g_nbytes_func_y = RINGBUFFER_LENGTH;
@@ -1801,11 +1926,14 @@ void set_default_func(uint8_t channel)
             for (i=0; i<RINGBUFFER_LENGTH; i++)
                 g_buf_func_y[i] = 10;
             
-            g_index_func_y_read = 0;
-            g_filllevel_buf_func_y = RINGBUFFER_LENGTH;
+            ATOMIC_BLOCK(ATOMIC_RESTORESTATE)
+            {
+            	g_index_func_y_read = 0;
+                g_filllevel_buf_func_y = RINGBUFFER_LENGTH;
+            }
             g_nblocks_func_y = 1;
             g_nbytes_final_block_y = 0;
-            //Reg_Handler(calculate_and_set_position_y, g_period_func_y, ISR_INCREMENT_FUNC_Y, TRUE);// enable ISR
+            //Reg_Handler(isr_calculate_and_set_position_y, g_period_func_y, ISR_INCREMENT_FUNC_Y, TRUE);// enable ISR
             break;
         default:
             xputs(PSTR("Function channel number must be 1 for x, or 2 for y.\n"));
@@ -1837,7 +1965,7 @@ void set_pos_func(uint8_t channel, uint8_t id_func)
     {
         case 1:    //channel x
             //read the 512 byte header block and send back the function name
-            //Reg_Handler(calculate_and_set_position_x, g_period_func_x, ISR_INCREMENT_FUNC_X, FALSE);//disable ISR
+            //Reg_Handler(isr_calculate_and_set_position_x, g_period_func_x, ISR_INCREMENT_FUNC_X, FALSE);//disable ISR
             
             pFile = &g_file_func_x;
             f_close(pFile);
@@ -1876,7 +2004,10 @@ void set_pos_func(uint8_t channel, uint8_t id_func)
                     g_id_func_x = id_func;
                     g_b_default_func_x = FALSE;
                     g_b_running = FALSE;
-                    g_display_count = 0;
+                    ATOMIC_BLOCK(ATOMIC_RESTORESTATE)
+                    {
+                    	g_display_count = 0;
+                    }
 
                     if (!g_b_quiet_mode)
                     {
@@ -1893,11 +2024,11 @@ void set_pos_func(uint8_t channel, uint8_t id_func)
             else
 				xputs(PSTR("Error opening file in set_pos_func(): X.\n"));
                 
-            //Reg_Handler(calculate_and_set_position_x, g_period_func_x, ISR_INCREMENT_FUNC_X, TRUE);//enable ISR
+            //Reg_Handler(isr_calculate_and_set_position_x, g_period_func_x, ISR_INCREMENT_FUNC_X, TRUE);//enable ISR
             break;
             
         case 2:	// channel y.
-            //Reg_Handler(calculate_and_set_position_y, g_period_func_y, ISR_INCREMENT_FUNC_Y, FALSE); //disable ISR
+            //Reg_Handler(isr_calculate_and_set_position_y, g_period_func_y, ISR_INCREMENT_FUNC_Y, FALSE); //disable ISR
             //read the header block and send back the function name
             pFile = &g_file_func_y;
             f_close(pFile);
@@ -1928,7 +2059,10 @@ void set_pos_func(uint8_t channel, uint8_t id_func)
                     g_id_func_y = id_func;
                     g_b_default_func_y = FALSE;
                     g_b_running = FALSE;
-                    g_display_count = 0;
+                    ATOMIC_BLOCK(ATOMIC_RESTORESTATE)
+                    {
+                    	g_display_count = 0;
+                    }
 
                     if (!g_b_quiet_mode)
                     {
@@ -1946,7 +2080,7 @@ void set_pos_func(uint8_t channel, uint8_t id_func)
             else
 				xputs(PSTR("Error opening file in set_pos_func(): Y.\n"));
             
-            //Reg_Handler(calculate_and_set_position_y, g_period_func_y, ISR_INCREMENT_FUNC_Y, TRUE);//enable ISR
+            //Reg_Handler(isr_calculate_and_set_position_y, g_period_func_y, ISR_INCREMENT_FUNC_Y, TRUE);//enable ISR
             break;
             
         default:
@@ -1977,7 +2111,7 @@ void set_vel_func(uint8_t channel, uint8_t id_func)
     switch(channel)
     {
         case 1:    // Channel x.
-            //Reg_Handler(calculate_and_set_position_x, g_period_func_x, ISR_INCREMENT_FUNC_X, FALSE); //disable ISR
+            //Reg_Handler(isr_calculate_and_set_position_x, g_period_func_x, ISR_INCREMENT_FUNC_X, FALSE); //disable ISR
             pFile = &g_file_func_x;
             f_close(pFile);
             if (!g_b_quiet_mode)
@@ -2011,7 +2145,10 @@ void set_vel_func(uint8_t channel, uint8_t id_func)
                     g_id_func_x = id_func;
                     g_b_default_func_x = FALSE;
                     g_b_running = FALSE;
-                    g_display_count = 0;  //clear the display count
+                    ATOMIC_BLOCK(ATOMIC_RESTORESTATE)
+                    {
+                    	g_display_count = 0;  //clear the display count
+                    }
 
                     if (!g_b_quiet_mode)
                     {
@@ -2028,12 +2165,12 @@ void set_vel_func(uint8_t channel, uint8_t id_func)
             else
 				xputs(PSTR("Error opening file in set_vel_func(): X.\n"));
 
-            //Reg_Handler(calculate_and_set_position_x, g_period_func_x, ISR_INCREMENT_FUNC_X, TRUE); //enable ISR
+            //Reg_Handler(isr_calculate_and_set_position_x, g_period_func_x, ISR_INCREMENT_FUNC_X, TRUE); //enable ISR
             break;
             
             
         case 2:	// Channel y.
-            //Reg_Handler(calculate_and_set_position_y, g_period_func_y, ISR_INCREMENT_FUNC_Y, FALSE); //disable ISR
+            //Reg_Handler(isr_calculate_and_set_position_y, g_period_func_y, ISR_INCREMENT_FUNC_Y, FALSE); //disable ISR
         	pFile = &g_file_func_y;
             f_close(pFile);
             if (!g_b_quiet_mode)
@@ -2066,7 +2203,10 @@ void set_vel_func(uint8_t channel, uint8_t id_func)
                     g_id_func_y = id_func;
                     g_b_default_func_y = FALSE;
                     g_b_running = FALSE;
-                    g_display_count = 0;  //clear the display count
+                    ATOMIC_BLOCK(ATOMIC_RESTORESTATE)
+                    {
+                    	g_display_count = 0;  //clear the display count
+                    }
 
                     if (!g_b_quiet_mode)
                     {
@@ -2083,7 +2223,7 @@ void set_vel_func(uint8_t channel, uint8_t id_func)
             else
 				xputs(PSTR("Error opening file in set_vel_func(): Y.\n"));
             
-            //Reg_Handler(calculate_and_set_position_y, g_period_func_y, ISR_INCREMENT_FUNC_Y, TRUE); //enable ISR
+            //Reg_Handler(isr_calculate_and_set_position_y, g_period_func_y, ISR_INCREMENT_FUNC_Y, TRUE); //enable ISR
             break;
             
         default:
@@ -2106,15 +2246,23 @@ void fetch_block_func_x(FIL *pFile, uint8_t bReset, uint8_t i_block_func_x)
     FRESULT 	fresult;
     uint8_t 	bufTemp[RINGBUFFER_LENGTH];
     uint16_t 	nbytesBuf;
+    uint8_t		filllevel_buf_func_x;
                 
+    ATOMIC_BLOCK(ATOMIC_RESTORESTATE)
+    {
+    	filllevel_buf_func_x = g_filllevel_buf_func_x;
+    }
     //xprintf(PSTR("i_block_func_x =  %u\n"), i_block_func_x);
-    if (g_filllevel_buf_func_x < RINGBUFFER_LENGTH)
+    if (filllevel_buf_func_x < RINGBUFFER_LENGTH)
     {
         if (bReset)
         {
-            g_index_func_x_read = 0;
-            g_index_func_x_write = 0;
-            g_filllevel_buf_func_x = 0;
+            ATOMIC_BLOCK(ATOMIC_RESTORESTATE)
+            {
+				g_index_func_x_read = 0;
+				g_index_func_x_write = 0;
+				g_filllevel_buf_func_x = 0;
+            }
         }
         
         offset = NBYTES_HEADER + i_block_func_x * RINGBUFFER_LENGTH;
@@ -2138,10 +2286,13 @@ void fetch_block_func_x(FIL *pFile, uint8_t bReset, uint8_t i_block_func_x)
 
             for (j=0; j<nbytes_read; j+=2)
             {
-                g_buf_func_x[g_index_func_x_write] = (uint16_t)bufTemp[j] + (uint16_t)bufTemp[j+1]*256 ;
-                g_index_func_x_write++;
-                g_index_func_x_write %= RINGBUFFER_LENGTH;
-                g_filllevel_buf_func_x++;
+                ATOMIC_BLOCK(ATOMIC_RESTORESTATE)
+                {
+					g_buf_func_x[g_index_func_x_write] = (uint16_t)bufTemp[j] + (uint16_t)bufTemp[j+1]*256 ;
+					g_index_func_x_write++;
+					g_index_func_x_write %= RINGBUFFER_LENGTH;
+					g_filllevel_buf_func_x++;
+                }
             }
             
             //xprintf(PSTR("g_index_func_x_write =  %u\n"), g_index_func_x_write);
@@ -2153,7 +2304,7 @@ void fetch_block_func_x(FIL *pFile, uint8_t bReset, uint8_t i_block_func_x)
         }
     }
     else
-        xputs(PSTR("Function buffer for x is full\n"));
+        xputs(PSTR("FuncX buffer is full\n"));
 
 } // fetch_block_func_x()
 
@@ -2170,15 +2321,25 @@ void fetch_block_func_y(FIL *pFile, uint8_t bReset, uint8_t i_block_func_y)
     FRESULT 	fresult;
     uint8_t 	bufTemp[RINGBUFFER_LENGTH];
     uint16_t 	nbytesBuf;
+    uint8_t		filllevel_buf_func_y;
+
+
+    ATOMIC_BLOCK(ATOMIC_RESTORESTATE)
+    {
+    	filllevel_buf_func_y = g_filllevel_buf_func_y;
+    }
 
     //xprintf(PSTR("i_block_func_y =  %u\n"), i_block_func_y);
-    if (g_filllevel_buf_func_y < RINGBUFFER_LENGTH)
+    if (filllevel_buf_func_y < RINGBUFFER_LENGTH)
     {
         if (bReset)
         {
-            g_filllevel_buf_func_y = 0;
-            g_index_func_y_read = 0;
-            g_index_func_y_write = 0;
+            ATOMIC_BLOCK(ATOMIC_RESTORESTATE)
+            {
+				g_filllevel_buf_func_y = 0;
+				g_index_func_y_read = 0;
+				g_index_func_y_write = 0;
+            }
         }
         
         offset = NBYTES_HEADER + i_block_func_y * RINGBUFFER_LENGTH;
@@ -2202,10 +2363,13 @@ void fetch_block_func_y(FIL *pFile, uint8_t bReset, uint8_t i_block_func_y)
             
             for (j = 0; j< nbytes_read; j+=2)
             {
-                g_buf_func_y[g_index_func_y_write] = (uint16_t)bufTemp[j] + (uint16_t)bufTemp[j+1]*256;
-                g_index_func_y_write++;
-                g_index_func_y_write %= RINGBUFFER_LENGTH;
-                g_filllevel_buf_func_y++;
+                ATOMIC_BLOCK(ATOMIC_RESTORESTATE)
+                {
+					g_buf_func_y[g_index_func_y_write] = (uint16_t)bufTemp[j] + (uint16_t)bufTemp[j+1]*256;
+					g_index_func_y_write++;
+					g_index_func_y_write %= RINGBUFFER_LENGTH;
+					g_filllevel_buf_func_y++;
+                }
             }
             //xprintf(PSTR("g_index_func_y_write =  %u\n"), g_index_func_y_write);
         }
@@ -2216,7 +2380,7 @@ void fetch_block_func_y(FIL *pFile, uint8_t bReset, uint8_t i_block_func_y)
         }
     }
     else
-        xputs(PSTR("Function buffer for y is full.\n"));
+        xputs(PSTR("FuncY buffer is full.\n"));
 
 } // fetch_block_func_y()
 
